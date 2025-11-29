@@ -14,6 +14,7 @@ Infraestrutura como código (IaC) para o FishingMap utilizando DigitalOcean Kube
 - **Container Registry**: Registry privado DigitalOcean
 
 ### Serviços Adicionais
+- **ArgoCD**: GitOps e Continuous Delivery
 - **SonarQube**: Análise de qualidade de código
 - **Observability Stack**: Prometheus, Grafana, Loki, Jaeger
 - **Kafka + Zookeeper**: Mensageria e event streaming
@@ -23,6 +24,7 @@ Infraestrutura como código (IaC) para o FishingMap utilizando DigitalOcean Kube
 https://api.fishingmap.com.br          → Backend API
 https://fishingmap.com.br              → Landing page (futuro)
 https://app.fishingmap.com.br          → Web app (futuro)
+https://argocd.fishingmap.com.br       → GitOps / Continuous Delivery
 https://sonarqube.fishingmap.com.br    → Code quality
 https://grafana.fishingmap.com.br      → Monitoring
 https://jaeger.fishingmap.com.br       → Tracing
@@ -43,6 +45,8 @@ https://jaeger.fishingmap.com.br       → Tracing
 
 Acesse: `Settings > Secrets and variables > Actions > New repository secret`
 
+#### Secrets Obrigatórios:
+
 ```bash
 # DigitalOcean
 DIGITALOCEAN_TOKEN=dop_v1_xxxxxxxxxxxxx
@@ -51,10 +55,32 @@ DIGITALOCEAN_TOKEN=dop_v1_xxxxxxxxxxxxx
 SPACES_ACCESS_KEY=DO00ABC123XYZ
 SPACES_SECRET_KEY=abc123def456ghi789...
 
-# Aplicação
+# Database (se não usar managed, mas recomendado usar managed)
+# Estas serão preenchidas automaticamente pelo Terraform se usar managed database
+
+# JWT & Refresh Tokens
 JWT_SECRET=<64+ caracteres aleatórios>
+REFRESH_TOKEN_SECRET=<64+ caracteres aleatórios - diferente do JWT_SECRET>
+
+# Redis
 REDIS_PASSWORD=<senha forte>
-API_KEY_WEATHER=<chave OpenWeatherMap - grátis>
+
+# External APIs
+API_KEY_WEATHER=<chave OpenWeatherMap - grátis em https://openweathermap.org/api>
+```
+
+#### Secrets Opcionais (para funcionalidades específicas):
+
+```bash
+# AWS S3 (se for usar S3 além dos Spaces - não necessário por padrão)
+AWS_ACCESS_KEY_ID=<se usar S3>
+AWS_SECRET_ACCESS_KEY=<se usar S3>
+
+# SendGrid/Email (se tiver notificações por email)
+SENDGRID_API_KEY=<se usar>
+
+# Firebase/Push Notifications (para notificações push no app)
+FIREBASE_SERVER_KEY=<se usar>
 ```
 
 ### 4. GitHub Variables Configurados

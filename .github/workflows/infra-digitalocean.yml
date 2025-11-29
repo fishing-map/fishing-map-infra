@@ -214,6 +214,28 @@ jobs:
           
           echo "cert-manager instalado"
 
+      - name: Install ArgoCD
+        if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
+        run: |
+          echo "Instalando ArgoCD (GitOps)..."
+          
+          # Criar namespace
+          kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Instalar ArgoCD
+          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          
+          # Aguardar pods ficarem prontos
+          echo "Aguardando ArgoCD ficar pronto..."
+          kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+          
+          # Obter senha inicial do admin
+          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+          echo "ArgoCD Admin Password: $ARGOCD_PASSWORD"
+          echo "ARGOCD_PASSWORD=$ARGOCD_PASSWORD" >> $GITHUB_ENV
+          
+          echo "ArgoCD instalado"
+
       - name: Prepare Secrets from Terraform Outputs
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
         run: |
@@ -253,6 +275,7 @@ jobs:
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
           API_KEY_WEATHER: ${{ secrets.API_KEY_WEATHER }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           SPACES_ACCESS_KEY: ${{ secrets.SPACES_ACCESS_KEY }}
@@ -273,6 +296,7 @@ jobs:
           sed -i "s|__DB_PASSWORD__|${DB_PASSWORD}|g" k8s/secrets.yaml
           sed -i "s|__REDIS_PASSWORD__|${REDIS_PASSWORD}|g" k8s/secrets.yaml
           sed -i "s|__JWT_SECRET__|${JWT_SECRET}|g" k8s/secrets.yaml
+          sed -i "s|__REFRESH_TOKEN_SECRET__|${REFRESH_TOKEN_SECRET}|g" k8s/secrets.yaml
           sed -i "s|__API_KEY_WEATHER__|${API_KEY_WEATHER}|g" k8s/secrets.yaml
           sed -i "s|__SPACES_ACCESS_KEY__|${SPACES_ACCESS_KEY}|g" k8s/secrets.yaml
           sed -i "s|__SPACES_SECRET_KEY__|${SPACES_SECRET_KEY}|g" k8s/secrets.yaml
@@ -341,11 +365,20 @@ jobs:
           echo "Nginx LoadBalancer IP: ${NGINX_LB_IP}"
           echo "SSL Certificate: Será emitido automaticamente pelo cert-manager"
           echo ""
-          echo "Configure os seguintes registros DNS:"
-          echo "   A    api.fishingmap.com.br     ${NGINX_LB_IP}"
-          echo "   A    fishingmap.com.br         ${NGINX_LB_IP}"
-          echo "   A    www.fishingmap.com.br     ${NGINX_LB_IP}"
-          echo "   A    app.fishingmap.com.br     ${NGINX_LB_IP}"
+          echo "📋 Configure os seguintes registros DNS:"
+          echo "   A    api.fishingmap.com.br         ${NGINX_LB_IP}"
+          echo "   A    fishingmap.com.br             ${NGINX_LB_IP}"
+          echo "   A    www.fishingmap.com.br         ${NGINX_LB_IP}"
+          echo "   A    app.fishingmap.com.br         ${NGINX_LB_IP}"
+          echo "   A    sonarqube.fishingmap.com.br   ${NGINX_LB_IP}"
+          echo "   A    grafana.fishingmap.com.br     ${NGINX_LB_IP}"
+          echo "   A    jaeger.fishingmap.com.br      ${NGINX_LB_IP}"
+          echo "   A    argocd.fishingmap.com.br      ${NGINX_LB_IP}"
+          echo ""
+          echo "ArgoCD (GitOps):"
+          echo "   URL: https://argocd.fishingmap.com.br"
+          echo "   User: admin"
+          echo "   Password: ${ARGOCD_PASSWORD}"
           echo ""
           echo "Após configurar o DNS, acesse: https://api.fishingmap.com.br/health"
 

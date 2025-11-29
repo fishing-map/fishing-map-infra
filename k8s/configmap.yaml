@@ -6,9 +6,10 @@ metadata:
   labels:
     app: fishing-map
 data:
-  # Application Settings
   NODE_ENV: "production"
   PORT: "3000"
+  APP_NAME: "fishing-map-server"
+  APP_VERSION: "1.0.0"
   LOG_LEVEL: "info"
 
   # Domain Configuration
@@ -54,9 +55,27 @@ data:
   SONARQUBE_URL: "https://sonarqube.fishingmap.com.br"
   GRAFANA_URL: "https://grafana.fishingmap.com.br"
   JAEGER_URL: "https://jaeger.fishingmap.com.br"
+  ARGOCD_URL: "https://argocd.fishingmap.com.br"
   PROMETHEUS_URL: "http://prometheus-service:9090"
   LOKI_URL: "http://loki-service:3100"
 
   # Internal Services
-#  KAFKA_BROKER: "kafka-service:9092"
-#  ZOOKEEPER_CONNECT: "zookeeper-service:2181"
+  KAFKA_BROKERS: "kafka-service:9092"
+  KAFKA_CLIENT_ID: "fishing-api"
+  ZOOKEEPER_CONNECT: "zookeeper-service:2181"
+
+  # OpenTelemetry (Tracing)
+  OTEL_ENABLED: "true"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger-service:4318"
+  OTEL_SERVICE_NAME: "fishing-map-server"
+  OTEL_SERVICE_VERSION: "1.0.0"
+
+  # Loki (Logs)
+  LOKI_HOST: "loki-service"
+  LOKI_PORT: "3100"
+
+  # Prometheus (Metrics)
+  PROMETHEUS_ENABLED: "true"
+
+  # CORS (Additional)
+  ALLOWED_ORIGINS: "https://fishingmap.com.br,https://www.fishingmap.com.br,https://app.fishingmap.com.br"
