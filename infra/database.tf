@@ -1,7 +1,3 @@
-# ===========================================
-# Managed PostgreSQL Database (Production)
-# ===========================================
-
 resource "digitalocean_database_cluster" "fishing_map_db" {
   count = var.enable_managed_database ? 1 : 0
 
@@ -9,7 +5,7 @@ resource "digitalocean_database_cluster" "fishing_map_db" {
   engine     = "pg"
   version    = "15"
   size       = var.database_size
-  region     = var.cluster_region
+  region     = var.database_region
   node_count = 1
 
   tags = [

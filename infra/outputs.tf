@@ -69,10 +69,10 @@ output "domain_name" {
   value       = var.domain_name != "" ? var.domain_name : "Nenhum domínio configurado"
 }
 
-# Load Balancer (if enabled)
+# Load Balancer (criado automaticamente pelo Nginx Ingress no K8s)
 output "load_balancer_ip" {
-  description = "IP do Load Balancer"
-  value       = var.enable_load_balancer ? digitalocean_loadbalancer.fishing_map_lb[0].ip : "Load Balancer não habilitado"
+  description = "IP do Load Balancer (será criado pelo Nginx Ingress Controller)"
+  value       = "LoadBalancer será criado automaticamente pelo Nginx Ingress no cluster K8s"
 }
 
 # Kubeconfig command
@@ -150,7 +150,7 @@ output "spaces_assets_bucket_region" {
 # Instruções para configurar backend remoto
 output "terraform_backend_config" {
   description = "Configuração do backend remoto do Terraform"
-  value = <<-EOT
+  value       = <<-EOT
     Para migrar o backend local para o Spaces, adicione no main.tf:
 
     terraform {
@@ -173,7 +173,7 @@ output "terraform_backend_config" {
 # Deployment instructions
 output "deployment_instructions" {
   description = "Instruções para deploy"
-  value = <<-EOT
+  value       = <<-EOT
     1. Configure doctl: doctl auth init
     2. Configure kubectl: ${digitalocean_kubernetes_cluster.fishing_map_cluster.name != "" ? "doctl kubernetes cluster kubeconfig save ${digitalocean_kubernetes_cluster.fishing_map_cluster.name}" : "cluster não encontrado"}
     3. Verify connection: kubectl get nodes
