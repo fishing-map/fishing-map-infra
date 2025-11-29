@@ -169,11 +169,18 @@ jobs:
         run: |
           echo "Instalando Nginx Ingress Controller..."
           
+          # Criar namespace do ingress-nginx
+          kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Aplicar ConfigMap customizado do Nginx
+          echo "Aplicando configuracoes customizadas do Nginx..."
+          kubectl apply -f k8s/nginx-ingress-configmap.yaml
+          
           # Adicionar repo Helm
           helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
           helm repo update
           
-          # Instalar ou atualizar Nginx Ingress
+          # Instalar ou atualizar Nginx Ingress com configuracoes otimizadas
           helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
             --namespace ingress-nginx \
             --create-namespace \
@@ -181,7 +188,15 @@ jobs:
             --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-protocol"="http" \
             --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-size-slug"="lb-small" \
             --set controller.publishService.enabled=true \
+            --set controller.ingressClassResource.default=true \
+            --set controller.service.externalTrafficPolicy=Local \
+            --set controller.config.use-forwarded-headers="true" \
+            --set controller.config.compute-full-forwarded-for="true" \
+            --set controller.config.use-proxy-protocol="false" \
+            --set controller.config.proxy-real-ip-cidr="0.0.0.0/0" \
+            --set controller.config.enable-real-ip="true" \
             --set controller.metrics.enabled=true \
+            --set controller.metrics.serviceMonitor.enabled=true \
             --set controller.podAnnotations."prometheus\.io/scrape"="true" \
             --set controller.podAnnotations."prometheus\.io/port"="10254" \
             --wait
@@ -192,10 +207,30 @@ jobs:
           echo "Aguardando LoadBalancer IP..."
           kubectl wait --for=condition=available --timeout=300s deployment/ingress-nginx-controller -n ingress-nginx
           
-          # Mostrar IP do LoadBalancer
-          LB_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          echo "LoadBalancer IP: $LB_IP"
+          # Aguardar servico ter IP externo
+          echo "Aguardando IP externo do LoadBalancer..."
+          for i in {1..30}; do
+            LB_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+            if [ -n "$LB_IP" ]; then
+              echo "LoadBalancer IP obtido: $LB_IP"
+              break
+            fi
+            echo "Tentativa $i/30: Aguardando IP..."
+            sleep 10
+          done
+          
+          if [ -z "$LB_IP" ]; then
+            echo "ERRO: Nao foi possivel obter IP do LoadBalancer"
+            kubectl get svc ingress-nginx-controller -n ingress-nginx
+            exit 1
+          fi
+          
           echo "NGINX_LB_IP=$LB_IP" >> $GITHUB_ENV
+          
+          # Verificar se Nginx esta respondendo
+          echo "Testando Nginx Ingress..."
+          kubectl run test-nginx --rm -i --restart=Never --image=curlimages/curl -- \
+            curl -I http://ingress-nginx-controller.ingress-nginx.svc.cluster.local || echo "Teste ignorado"
 
       - name: Install cert-manager
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
@@ -341,29 +376,42 @@ jobs:
           kubectl apply -f k8s/redis-deployment.yaml
           kubectl wait --for=condition=available --timeout=300s deployment/redis -n fishing-map
           
-          # 7. Deploy Stack de Observabilidade (Grafana, Prometheus, Loki)
-          echo "[7/8] Deployando stack de observabilidade..."
+          # 7. Deploy Stack de Observabilidade (Grafana, Prometheus, Loki, Jaeger)
+          echo "[7/10] Deployando stack de observabilidade..."
           kubectl apply -f k8s/observability/configmaps.yaml
           kubectl apply -f k8s/observability/stack.yaml
-          echo "Grafana, Prometheus e Loki deployados"
+          echo "✅ Grafana, Prometheus, Loki, Jaeger e Promtail deployados"
           echo ""
           
-          # 8. Deploy Ingress (rotas dos domínios)
-          echo "[8/8] Configurando Ingress e cert-manager..."
+          # 8. Deploy DevTools (SonarQube)
+          echo "[8/10] Deployando DevTools (SonarQube)..."
+          kubectl apply -f k8s/devtools/sonarqube.yaml
+          echo "⏳ Aguardando SonarQube PostgreSQL ficar pronto..."
+          kubectl wait --for=condition=available --timeout=300s deployment/sonarqube-postgres -n fishing-map
+          echo "✅ SonarQube PostgreSQL pronto"
+          echo "⏳ Aguardando SonarQube ficar pronto (pode levar alguns minutos)..."
+          kubectl wait --for=condition=available --timeout=600s deployment/sonarqube -n fishing-map || echo "⚠️  SonarQube ainda está iniciando (pode levar 5-10 minutos)"
+          echo ""
+          
+          # 9. Deploy Ingress (rotas dos domínios)
+          echo "[9/10] Configurando Ingress e cert-manager..."
           kubectl apply -f k8s/cert-manager-issuer.yaml
           kubectl apply -f k8s/devtools/ingress.yaml
           echo "Ingress configurado para: grafana, argocd"
           echo ""
-          echo "Infraestrutura base criada com sucesso!"
+          echo "✅ Infraestrutura base criada com sucesso!"
           echo ""
-          echo "Serviços deployados:"
-          echo "  Redis"
-          echo "  Grafana"
-          echo "  Prometheus"
-          echo "  Loki"
-          echo "  ArgoCD"
-          echo "  Ingress Controller"
-          echo "  cert-manager"
+          echo "📦 Serviços deployados:"
+          echo "  ✅ Redis (Cache)"
+          echo "  ✅ Prometheus (Métricas)"
+          echo "  ✅ Grafana (Dashboards)"
+          echo "  ✅ Loki (Logs)"
+          echo "  ✅ Promtail (Log Collector)"
+          echo "  ✅ Jaeger (Tracing)"
+          echo "  ✅ SonarQube (Code Quality)"
+          echo "  ✅ ArgoCD (GitOps)"
+          echo "  ✅ Ingress Controller (Nginx)"
+          echo "  ✅ cert-manager (SSL)"
           echo ""
           
           # Aguardar certificado ser emitido
@@ -376,27 +424,43 @@ jobs:
           echo ""
           echo "Nginx LoadBalancer IP: ${NGINX_LB_IP}"
           echo ""
-          echo "Configure DNS (ou aguarde propagação se já configurou):"
-          echo "   A    fishingmap.com.br           ${NGINX_LB_IP}"
-          echo "   A    www.fishingmap.com.br       ${NGINX_LB_IP}"
-          echo "   A    api.fishingmap.com.br       ${NGINX_LB_IP}"
-          echo "   A    app.fishingmap.com.br       ${NGINX_LB_IP}"
-          echo "   A    grafana.fishingmap.com.br   ${NGINX_LB_IP}"
-          echo "   A    argocd.fishingmap.com.br    ${NGINX_LB_IP}"
+          echo "🌐 Configure DNS (ou aguarde propagação se já configurou):"
           echo "   A    fishingmap.com.br             ${NGINX_LB_IP}"
           echo "   A    www.fishingmap.com.br         ${NGINX_LB_IP}"
+          echo "   A    api.fishingmap.com.br         ${NGINX_LB_IP}"
           echo "   A    app.fishingmap.com.br         ${NGINX_LB_IP}"
-          echo "   A    sonarqube.fishingmap.com.br   ${NGINX_LB_IP}"
+          echo ""
+          echo "📊 Observability & DevTools:"
           echo "   A    grafana.fishingmap.com.br     ${NGINX_LB_IP}"
+          echo "   A    prometheus.fishingmap.com.br  ${NGINX_LB_IP}"
           echo "   A    jaeger.fishingmap.com.br      ${NGINX_LB_IP}"
+          echo "   A    sonarqube.fishingmap.com.br   ${NGINX_LB_IP}"
           echo "   A    argocd.fishingmap.com.br      ${NGINX_LB_IP}"
           echo ""
-          echo "ArgoCD (GitOps):"
-          echo "   URL: https://argocd.fishingmap.com.br"
-          echo "   User: admin"
-          echo "   Password: ${ARGOCD_PASSWORD}"
+          echo "Credenciais de Acesso:"
           echo ""
-          echo "Após configurar o DNS, acesse: https://api.fishingmap.com.br/health"
+          echo "Observability Stack:"
+          echo "   Grafana: https://grafana.fishingmap.com.br"
+          echo "      User: admin"
+          echo "      Password: admin (altere apos primeiro login)"
+          echo ""
+          echo "   Prometheus: https://prometheus.fishingmap.com.br"
+          echo "      (Sem autenticacao - use apenas para debug)"
+          echo ""
+          echo "   Jaeger: https://jaeger.fishingmap.com.br"
+          echo "      (Sem autenticacao)"
+          echo ""
+          echo "DevTools:"
+          echo "   SonarQube: https://sonarqube.fishingmap.com.br"
+          echo "      User: admin"
+          echo "      Password: admin (altere apos primeiro login)"
+          echo "      AVISO: Primeira inicializacao pode levar 5-10 minutos"
+          echo ""
+          echo "   ArgoCD: https://argocd.fishingmap.com.br"
+          echo "      User: admin"
+          echo "      Password: ${ARGOCD_PASSWORD}"
+          echo ""
+          echo "Apos configurar o DNS, acesse: https://api.fishingmap.com.br/health"
 
       - name: Show Cluster Status
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
@@ -404,12 +468,32 @@ jobs:
           echo "=== Cluster Status ==="
           kubectl get nodes -o wide
           
+          echo ""
           echo "=== Pods Status ==="
           kubectl get pods -n fishing-map -o wide
           
+          echo ""
           echo "=== Services Status ==="
           kubectl get svc -n fishing-map -o wide
           
+          echo ""
+          echo "=== Ingress Status ==="
+          kubectl get ingress -n fishing-map -o wide
+          
+          echo ""
+          echo "=== Ingress Details ==="
+          kubectl describe ingress -n fishing-map
+          
+          echo ""
+          echo "=== Nginx Ingress Controller Status ==="
+          kubectl get pods -n ingress-nginx
+          kubectl get svc -n ingress-nginx
+          
+          echo ""
+          echo "=== Nginx Ingress Controller Logs (ultimas 50 linhas) ==="
+          kubectl logs -n ingress-nginx deployment/ingress-nginx-controller --tail=50 || echo "Nao foi possivel obter logs"
+          
+          echo ""
           echo "=== LoadBalancer IP ==="
           kubectl get svc backend-loadbalancer -n fishing-map -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "LoadBalancer IP not ready yet"
 

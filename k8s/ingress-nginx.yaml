@@ -1,10 +1,3 @@
-# ===========================================
-# Nginx Ingress Controller Configuration
-# ===========================================
-# Proxy reverso para api.fishingmap.com.br
-# SSL automático via cert-manager (Let's Encrypt)
-# ===========================================
-
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -13,15 +6,10 @@ metadata:
   labels:
     app: fishing-map
   annotations:
-    # Nginx Ingress Controller
-    kubernetes.io/ingress.class: "nginx"
-
-    # SSL/TLS Configuration
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 
-    # CORS Configuration
     nginx.ingress.kubernetes.io/enable-cors: "true"
     nginx.ingress.kubernetes.io/cors-allow-origin: "https://fishingmap.com.br, https://www.fishingmap.com.br, https://app.fishingmap.com.br"
     nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, PATCH, OPTIONS"
@@ -51,17 +39,16 @@ metadata:
       more_set_headers "Permissions-Policy: geolocation=(self), camera=(), microphone=()";
 
 spec:
+  ingressClassName: nginx
   tls:
   - hosts:
     - api.fishingmap.com.br
     secretName: api-fishingmap-tls
 
   rules:
-  # API Backend
   - host: api.fishingmap.com.br
     http:
       paths:
-      # Health check (sem autenticação)
       - path: /health
         pathType: Exact
         backend:
@@ -70,7 +57,6 @@ spec:
             port:
               number: 80
 
-      # Documentação da API (Swagger/OpenAPI)
       - path: /docs
         pathType: Prefix
         backend:
@@ -79,7 +65,6 @@ spec:
             port:
               number: 80
 
-      # API v1
       - path: /api/v1
         pathType: Prefix
         backend:
@@ -88,7 +73,6 @@ spec:
             port:
               number: 80
 
-      # Fallback - todas as outras rotas
       - path: /
         pathType: Prefix
         backend:
@@ -98,9 +82,6 @@ spec:
               number: 80
 
 ---
-# ===========================================
-# PgAdmin - Manutenção do Banco de Dados
-# ===========================================
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -132,9 +113,6 @@ spec:
               number: 80
 
 ---
-# ===========================================
-# Grafana - Monitoring e Observability
-# ===========================================
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -163,9 +141,6 @@ spec:
               number: 3000
 
 ---
-# ===========================================
-# ArgoCD - GitOps Management
-# ===========================================
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -196,9 +171,6 @@ spec:
               number: 443
 
 ---
-# ===========================================
-# Redirect www.api.fishingmap.com.br → api.fishingmap.com.br
-# ===========================================
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
