@@ -337,48 +337,52 @@ jobs:
           kubectl apply -f k8s/configmap.yaml
           
           # 6. Deploy Redis
-          echo "[6/10] Deployando Redis..."
+          echo "[6/8] Deployando Redis..."
           kubectl apply -f k8s/redis-deployment.yaml
           kubectl wait --for=condition=available --timeout=300s deployment/redis -n fishing-map
           
-          # 7. Deploy PgAdmin (Manutenção do Banco)
-          echo "[7/9] Deployando PgAdmin para manutenção do banco..."
-          kubectl apply -f k8s/pgadmin-deployment.yaml
-          
-          echo "PgAdmin deployado (iniciando em background)"
-          echo ""
-          echo "PgAdmin estará disponível em alguns minutos:"
-          echo "   URL: https://pgadmin.fishingmap.com.br (após configurar DNS)"
-          echo "   Email: admin@fishingmap.com.br"
-          echo "   Senha: kubectl get secret pgadmin-secret -n fishing-map -o jsonpath='{.data.pgadmin-password}' | base64 -d"
-          echo ""
-          echo "Para verificar status:"
-          echo "   kubectl get pods -n fishing-map -l app=pgadmin"
-          echo "   kubectl logs -l app=pgadmin -n fishing-map -f"
+          # 7. Deploy Stack de Observabilidade (Grafana, Prometheus, Loki)
+          echo "[7/8] Deployando stack de observabilidade..."
+          kubectl apply -f k8s/observability/configmaps.yaml
+          kubectl apply -f k8s/observability/stack.yaml
+          echo "Grafana, Prometheus e Loki deployados"
           echo ""
           
-          # 8. Deploy cert-manager ClusterIssuer
-          echo "[8/9] Configurando ClusterIssuer (Let's Encrypt)..."
+          # 8. Deploy Ingress (rotas dos domínios)
+          echo "[8/8] Configurando Ingress e cert-manager..."
           kubectl apply -f k8s/cert-manager-issuer.yaml
-          sleep 5
-          
-          # 9. Informações finais
-          echo "[9/9] Infraestrutura base criada com sucesso!"
+          kubectl apply -f k8s/devtools/ingress.yaml
+          echo "Ingress configurado para: grafana, argocd"
+          echo ""
+          echo "Infraestrutura base criada com sucesso!"
+          echo ""
+          echo "Serviços deployados:"
+          echo "  Redis"
+          echo "  Grafana"
+          echo "  Prometheus"
+          echo "  Loki"
+          echo "  ArgoCD"
+          echo "  Ingress Controller"
+          echo "  cert-manager"
           echo ""
           
           # Aguardar certificado ser emitido
-          echo "Aguardando emissão do certificado SSL..."
-          sleep 30
+          echo "Aguardando certificados SSL (cert-manager)..."
+          sleep 15
           kubectl get certificate -n fishing-map || true
           
           echo ""
-          echo "Deploy automatizado concluído com sucesso!"
+          echo "Deploy completo!"
           echo ""
           echo "Nginx LoadBalancer IP: ${NGINX_LB_IP}"
-          echo "SSL Certificate: Será emitido automaticamente pelo cert-manager"
           echo ""
-          echo "Configure os seguintes registros DNS:"
-          echo "   A    api.fishingmap.com.br         ${NGINX_LB_IP}"
+          echo "Configure DNS (ou aguarde propagação se já configurou):"
+          echo "   A    fishingmap.com.br           ${NGINX_LB_IP}"
+          echo "   A    www.fishingmap.com.br       ${NGINX_LB_IP}"
+          echo "   A    api.fishingmap.com.br       ${NGINX_LB_IP}"
+          echo "   A    app.fishingmap.com.br       ${NGINX_LB_IP}"
+          echo "   A    grafana.fishingmap.com.br   ${NGINX_LB_IP}"
+          echo "   A    argocd.fishingmap.com.br    ${NGINX_LB_IP}"
           echo "   A    fishingmap.com.br             ${NGINX_LB_IP}"
           echo "   A    www.fishingmap.com.br         ${NGINX_LB_IP}"
           echo "   A    app.fishingmap.com.br         ${NGINX_LB_IP}"
