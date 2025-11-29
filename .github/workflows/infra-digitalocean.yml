@@ -260,9 +260,6 @@ jobs:
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
-          API_KEY_WEATHER: ${{ secrets.API_KEY_WEATHER }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
           SPACES_ACCESS_KEY: ${{ secrets.SPACES_ACCESS_KEY }}
           SPACES_SECRET_KEY: ${{ secrets.SPACES_SECRET_KEY }}
@@ -281,11 +278,13 @@ jobs:
           sed -i "s|__DB_USER__|${DB_USER}|g" k8s/secrets.yaml
           sed -i "s|__DB_PASSWORD__|${DB_PASSWORD}|g" k8s/secrets.yaml
           sed -i "s|__REDIS_PASSWORD__|${REDIS_PASSWORD}|g" k8s/secrets.yaml
-          sed -i "s|__JWT_SECRET__|${JWT_SECRET}|g" k8s/secrets.yaml
-          sed -i "s|__REFRESH_TOKEN_SECRET__|${REFRESH_TOKEN_SECRET}|g" k8s/secrets.yaml
-          sed -i "s|__API_KEY_WEATHER__|${API_KEY_WEATHER}|g" k8s/secrets.yaml
           sed -i "s|__SPACES_ACCESS_KEY__|${SPACES_ACCESS_KEY}|g" k8s/secrets.yaml
           sed -i "s|__SPACES_SECRET_KEY__|${SPACES_SECRET_KEY}|g" k8s/secrets.yaml
+          
+          # JWT e API_KEY serão configurados depois via kubectl ou pipeline da aplicação
+          sed -i "s|__JWT_SECRET__|CHANGE_ME_LATER|g" k8s/secrets.yaml
+          sed -i "s|__REFRESH_TOKEN_SECRET__|CHANGE_ME_LATER|g" k8s/secrets.yaml
+          sed -i "s|__API_KEY_WEATHER__|CHANGE_ME_LATER|g" k8s/secrets.yaml
           
           # Preencher ConfigMap com Spaces
           sed -i "s|__SPACES_ENDPOINT__|${SPACES_ENDPOINT}|g" k8s/configmap.yaml
