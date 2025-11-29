@@ -85,6 +85,8 @@ jobs:
         if: ${{ github.event.inputs.action == 'plan' }}
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
         run: |
           terraform -chdir="$TF_ROOT" plan \
             -var-file="terraform.tfvars"
@@ -93,6 +95,8 @@ jobs:
         if: ${{ github.event.inputs.action == 'apply' }}
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
         run: |
           terraform -chdir="$TF_ROOT" apply -auto-approve \
             -var-file="terraform.tfvars"
