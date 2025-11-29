@@ -271,47 +271,6 @@ jobs:
           
           cd ..
 
-      - name: Checkout Migrations Repository
-        if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
-        uses: actions/checkout@v4
-        with:
-          repository: fishing-map/migrations
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: migrations-repo
-
-      - name: Build and Push Migrations Image
-        if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
-        env:
-          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-        run: |
-          echo "🐳 Building migrations image from separate repository..."
-          
-          # Garantir que doctl está autenticado
-          doctl auth init --access-token $DIGITALOCEAN_TOKEN
-          
-          # Login no Container Registry
-          echo "Fazendo login no DigitalOcean Container Registry..."
-          doctl registry login
-          
-          # Verificar registry endpoint
-          echo "Registry Endpoint: ${REGISTRY_ENDPOINT}"
-          
-          # Build da imagem de migrations (repositório separado checado em migrations-repo/)
-          cd migrations-repo
-          docker build -t ${REGISTRY_ENDPOINT}/migrations:latest .
-          docker tag ${REGISTRY_ENDPOINT}/migrations:latest ${REGISTRY_ENDPOINT}/migrations:${{ github.sha }}
-          
-          # Push das imagens
-          docker push ${REGISTRY_ENDPOINT}/migrations:latest
-          docker push ${REGISTRY_ENDPOINT}/migrations:${{ github.sha }}
-          
-          echo "Imagem de migrations publicada:"
-          echo "   Repository: fishing-map/migrations"
-          echo "   Latest: ${REGISTRY_ENDPOINT}/migrations:latest"
-          echo "   SHA: ${REGISTRY_ENDPOINT}/migrations:${{ github.sha }}"
-          
-          # Volta para workspace raiz
-          cd ..
 
       - name: Deploy Kubernetes Manifests
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
@@ -324,7 +283,7 @@ jobs:
           echo "FishingMap - Deploy Automatizado no Kubernetes"
           
           # 1. Atualizar registry endpoint nos manifestos
-          echo "[1/7] Atualizando registry endpoint..."
+          echo "[1/10] Atualizando registry endpoint..."
           find k8s/ -name "*.yaml" -exec sed -i "s|registry.digitalocean.com/fishing-map|${REGISTRY_ENDPOINT}|g" {} \;
           
           # 2. Preencher secrets automaticamente
@@ -350,7 +309,7 @@ jobs:
           sed -i "s|__SPACES_CDN_URL__|${SPACES_CDN_URL}|g" k8s/configmap.yaml
           
           # Preencher PgAdmin com credenciais do banco (para manutenção em produção)
-          echo "[2.1/7] Configurando PgAdmin com credenciais do banco..."
+          echo "[2.1/10] Configurando PgAdmin com credenciais do banco..."
           sed -i "s|__DB_HOST__|${DB_HOST}|g" k8s/pgadmin-deployment.yaml
           sed -i "s|__DB_PORT__|${DB_PORT}|g" k8s/pgadmin-deployment.yaml
           sed -i "s|__DB_USER__|${DB_USER}|g" k8s/pgadmin-deployment.yaml
@@ -361,7 +320,7 @@ jobs:
           echo "PgAdmin configurado (senha admin salva no secret)"
           
           # 3. Criar registry secret
-          echo "[3/7] Configurando acesso ao container registry..."
+          echo "[3/10] Configurando acesso ao container registry..."
           doctl registry login
           kubectl create secret docker-registry registry-secret \
             --from-file=.dockerconfigjson=$HOME/.docker/config.json \
@@ -369,59 +328,48 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f - || true
           
           # 4. Aplicar namespace
-          echo "[4/7] Criando namespace..."
+          echo "[4/10] Criando namespace..."
           kubectl apply -f k8s/namespace.yaml
           
           # 5. Aplicar secrets e configs
-          echo "[5/7] Aplicando secrets e configurações..."
+          echo "[5/10] Aplicando secrets e configurações..."
           kubectl apply -f k8s/secrets.yaml
           kubectl apply -f k8s/configmap.yaml
           
           # 6. Deploy Redis
-          echo "[6/7] Deployando Redis..."
+          echo "[6/10] Deployando Redis..."
           kubectl apply -f k8s/redis-deployment.yaml
           kubectl wait --for=condition=available --timeout=300s deployment/redis -n fishing-map
           
-          # 7. Executar migrations
-          echo "[7/11] Executando migrations do banco..."
-          kubectl delete job db-migrations -n fishing-map --ignore-not-found=true
-          kubectl apply -f k8s/migrations-job.yaml
-          kubectl wait --for=condition=complete --timeout=600s job/db-migrations -n fishing-map || {
-            echo "⚠️ Migrations falharam, verificando logs..."
-            kubectl logs -l app=migrations -n fishing-map --tail=50
-            exit 1
-          }
-          echo "Migrations executadas com sucesso!"
+          # 7. Migrations (tem pipeline própria agora)
+          echo "[7/10] Migrations têm pipeline própria no repositório fishing-map/migrations"
+          echo ""
+          echo "Para executar migrations:"
+          echo "  1. Push no repositório fishing-map/migrations (automático)"
+          echo "  2. Ou execute manualmente: Actions → Build and Deploy Migrations"
+          echo ""
+          echo "A imagem de migrations já deve existir no registry se você executou"
+          echo "a pipeline de migrations anteriormente."
+          echo ""
           
           # 8. Deploy PgAdmin (Manutenção do Banco)
-          echo "[8/11] Deployando PgAdmin para manutenção do banco..."
+          echo "[8/10] Deployando PgAdmin para manutenção do banco..."
           kubectl apply -f k8s/pgadmin-deployment.yaml
           kubectl wait --for=condition=available --timeout=300s deployment/pgadmin -n fishing-map
           echo "PgAdmin disponível em: https://pgadmin.fishingmap.com.br"
           echo "   Email: admin@fishingmap.com.br"
           echo "   Senha: kubectl get secret pgadmin-secret -n fishing-map -o jsonpath='{.data.pgadmin-password}' | base64 -d"
-          
-          # 9. Deploy Backend (PULADO - imagem não existe no registry)
-          echo "[9/11] ⏭️  PULANDO Backend API (imagem não construída ainda)"
           echo ""
-          echo "  Para deployar backend depois:"
-          echo "   1. Build: docker build -t ${REGISTRY_ENDPOINT}/backend:latest ./fishing-map-server"
-          echo "   2. Push: docker push ${REGISTRY_ENDPOINT}/backend:latest"
-          echo "   3. Deploy: kubectl apply -f k8s/backend-deployment.yaml"
-          echo "   4. Autoscaling: kubectl apply -f k8s/autoscaling.yaml"
-          echo ""
-          # kubectl apply -f k8s/backend-deployment.yaml
-          # kubectl apply -f k8s/autoscaling.yaml
-          # kubectl wait --for=condition=available --timeout=300s deployment/backend-api -n fishing-map
           
           # 9. Deploy cert-manager ClusterIssuer
           echo "[9/10] Configurando ClusterIssuer (Let's Encrypt)..."
           kubectl apply -f k8s/cert-manager-issuer.yaml
           sleep 5
           
-          # 10. Deploy Nginx Ingress (sem backend por enquanto)
-          echo "[10/10] Configurando Nginx Ingress (SSL automático)..."
-          echo "  Ingress será aplicado depois que o backend estiver deployado"
+          # 10. Deploy Nginx Ingress
+          echo "[10/10] Configurando Nginx Ingress..."
+          echo "  O Ingress será aplicado automaticamente pela pipeline do backend"
+          echo "  quando o backend for deployado (fishing-map-server)"
           # kubectl apply -f k8s/ingress-nginx.yaml
           
           # Aguardar certificado ser emitido
