@@ -114,7 +114,7 @@ variable "cluster_region" {
 variable "kubernetes_version" {
   description = "Versão do Kubernetes"
   type        = string
-  default     = "1.28.2-do.0"
+  default     = "1.31.1-do.4"
 }
 
 variable "node_pool_size" {
@@ -153,5 +153,18 @@ variable "enable_load_balancer" {
   description = "Habilitar load balancer (usado no Kubernetes via Ingress)"
   type        = bool
   default     = true
+}
+
+# Spaces Access Keys
+variable "spaces_access_key" {
+  description = "DigitalOcean Spaces Access Key"
+  type        = string
+  sensitive   = true
+}
+
+variable "spaces_secret_key" {
+  description = "DigitalOcean Spaces Secret Key"
+  type        = string
+  sensitive   = true
 }
 

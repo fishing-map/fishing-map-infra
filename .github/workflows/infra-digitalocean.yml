@@ -72,9 +72,13 @@ jobs:
       - name: Create terraform.tfvars
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          SPACES_ACCESS_KEY: ${{ secrets.SPACES_ACCESS_KEY }}
+          SPACES_SECRET_KEY: ${{ secrets.SPACES_SECRET_KEY }}
         run: |
           cat > $TF_ROOT/terraform.tfvars << EOF
           do_token = "$DIGITALOCEAN_TOKEN"
+          spaces_access_key = "$SPACES_ACCESS_KEY"
+          spaces_secret_key = "$SPACES_SECRET_KEY"
           project_name = "fishing-map"
           environment = "${{ github.event.inputs.environment || 'dev' }}"
           enable_managed_database = ${{ github.event.inputs.enable_managed_database || false }}
