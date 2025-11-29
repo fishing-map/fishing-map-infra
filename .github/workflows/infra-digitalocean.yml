@@ -409,30 +409,68 @@ jobs:
           echo "=== LoadBalancer IP ==="
           kubectl get svc backend-loadbalancer -n fishing-map -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "LoadBalancer IP not ready yet"
 
+      - name: Verify Infrastructure Status
+        if: ${{ github.event.inputs.action == 'apply' }}
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+        run: |
+          echo "=== Verificando Status da Infraestrutura ==="
+          echo ""
+          
+          # Verificar se doctl está autenticado
+          doctl auth init --access-token $DIGITALOCEAN_TOKEN
+          
+          # Listar clusters K8s
+          echo "Clusters Kubernetes:"
+          doctl kubernetes cluster list
+          
+          # Listar bancos de dados
+          echo ""
+          echo "Bancos de Dados:"
+          doctl databases list
+          
+          # Listar container registries
+          echo ""
+          echo "Container Registries:"
+          doctl registry list
+          
+          # Listar Spaces
+          echo ""
+          echo "Spaces (Object Storage):"
+          doctl compute space list 2>/dev/null || echo "Nenhum Space listado (pode não ter permissão via doctl)"
+          
+          echo ""
+          echo "Verificação completa!"
+
       - name: Next Steps
         if: ${{ github.event.inputs.action == 'apply' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
         run: |
-          echo "=== ✅ Infraestrutura Criada com Sucesso! ==="
+          echo "=== Infraestrutura Criada com Sucesso! ==="
           echo ""
-          echo "📋 Próximos Passos:"
+          echo "Próximos Passos:"
           echo ""
-          echo "1️⃣  Configure kubectl localmente:"
+          
+          # Capturar cluster name
+          CLUSTER_NAME=$(terraform -chdir="$TF_ROOT" output -raw cluster_name 2>/dev/null || echo "fishing-map-${{ github.event.inputs.environment }}-cluster")
+          
+          echo "Configure kubectl localmente:"
           echo "   doctl auth init --access-token <your-token>"
-          echo "   doctl kubernetes cluster kubeconfig save $(terraform -chdir="$TF_ROOT" output -raw cluster_name)"
+          echo "   doctl kubernetes cluster kubeconfig save ${CLUSTER_NAME}"
           echo ""
-          echo "2️⃣  Configure DNS para o LoadBalancer:"
+          echo "Configure DNS para o LoadBalancer:"
           echo "   IP: ${NGINX_LB_IP}"
           echo "   Registros necessários: api.fishingmap.com.br, pgadmin.fishingmap.com.br, etc"
           echo ""
-          echo "3️⃣  Execute a pipeline de Migrations:"
+          echo "Execute a pipeline de Migrations:"
           echo "   Repositório: fishing-map/migrations"
           echo "   Actions → Build and Deploy Migrations → Run workflow"
           echo ""
-          echo "4️⃣  Execute a pipeline de Backend:"
+          echo "Execute a pipeline de Backend:"
           echo "   Repositório: fishing-map/fishing-map-server"
           echo "   Actions → Build and Deploy Backend → Run workflow"
           echo ""
-          echo "5️⃣  Atualize secrets com valores reais (JWT, API Keys):"
+          echo "Atualize secrets com valores reais (JWT, API Keys):"
           echo "   kubectl edit secret app-secrets -n fishing-map"
-          echo ""
-          echo "📚 Documentação completa em: infrastructure/ARQUITETURA_3_PIPELINES.md"
