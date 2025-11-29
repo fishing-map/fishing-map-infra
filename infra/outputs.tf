@@ -118,13 +118,13 @@ output "database_uri" {
 
 # DigitalOcean Spaces (Object Storage)
 output "spaces_backend_bucket_name" {
-  description = "Nome do bucket de backend (Terraform state)"
-  value       = digitalocean_spaces_bucket.terraform_state.name
+  description = "Nome do bucket de backend (Terraform state) - Criado via bootstrap"
+  value       = "${var.project_name}-${var.environment}-terraform-state"
 }
 
 output "spaces_backend_bucket_endpoint" {
   description = "Endpoint do bucket de backend"
-  value       = "https://${digitalocean_spaces_bucket.terraform_state.bucket_domain_name}"
+  value       = "https://${var.project_name}-${var.environment}-terraform-state.${var.spaces_region}.digitaloceanspaces.com"
 }
 
 output "spaces_assets_bucket_name" {
@@ -157,7 +157,7 @@ output "terraform_backend_config" {
       backend "s3" {
         endpoint                    = "https://${var.spaces_region}.digitaloceanspaces.com"
         key                         = "fishing-map/${var.environment}/terraform.tfstate"
-        bucket                      = "${digitalocean_spaces_bucket.terraform_state.name}"
+        bucket                      = "${var.project_name}-${var.environment}-terraform-state"
         region                      = "us-east-1" # Fixo para compatibilidade S3
         skip_credentials_validation = true
         skip_metadata_api_check     = true

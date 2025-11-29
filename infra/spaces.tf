@@ -1,18 +1,4 @@
-
-resource "digitalocean_spaces_bucket" "terraform_state" {
-  name   = "${var.project_name}-${var.environment}-terraform-state"
-  region = var.spaces_region
-  acl    = "private"
-
-  versioning {
-    enabled = true
-  }
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
+# Bucket para assets da aplicação (fotos de usuários, capturas, etc)
 resource "digitalocean_spaces_bucket" "application_assets" {
   name   = "${var.project_name}-${var.environment}-assets"
   region = var.spaces_region
