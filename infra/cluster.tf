@@ -28,7 +28,9 @@ resource "digitalocean_project" "fishing_map" {
   name        = "${var.project_name}-${var.environment}"
   description = "FishingMap Kubernetes Infrastructure"
   purpose     = "Web Application"
-  environment = var.environment
+  # DigitalOcean aceita apenas: development, staging, production
+  # Mapeia 'prod' -> 'production', 'dev' -> 'development'
+  environment = var.environment == "prod" ? "production" : (var.environment == "dev" ? "development" : var.environment)
 
   resources = [
     digitalocean_kubernetes_cluster.fishing_map_cluster.urn
