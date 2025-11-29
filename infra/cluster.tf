@@ -31,7 +31,6 @@ resource "digitalocean_project" "fishing_map" {
   environment = var.environment
 
   resources = [
-    digitalocean_kubernetes_cluster.fishing_map_cluster.urn,
-    digitalocean_container_registry.fishing_map_registry.urn
+    digitalocean_kubernetes_cluster.fishing_map_cluster.urn
   ]
 }
