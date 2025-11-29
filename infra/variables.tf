@@ -114,7 +114,7 @@ variable "cluster_region" {
 variable "kubernetes_version" {
   description = "Versão do Kubernetes"
   type        = string
-  default     = "1.31.1-do.4"
+  default     = "1.34.1-do.0"
 }
 
 variable "node_pool_size" {
