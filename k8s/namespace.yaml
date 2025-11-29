@@ -1,0 +1,12 @@
+# ===========================================
+# Namespace Configuration
+# ===========================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fishing-map
+  labels:
+    name: fishing-map
+    app: fishing-map
+    environment: production
+

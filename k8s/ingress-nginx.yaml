@@ -1,0 +1,129 @@
+# ===========================================
+# Nginx Ingress Controller Configuration
+# ===========================================
+# Proxy reverso para api.fishingmap.com.br
+# SSL automático via cert-manager (Let's Encrypt)
+# ===========================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fishing-map-ingress
+  namespace: fishing-map
+  labels:
+    app: fishing-map
+  annotations:
+    # Nginx Ingress Controller
+    kubernetes.io/ingress.class: "nginx"
+
+    # SSL/TLS Configuration
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # CORS Configuration
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://fishingmap.com.br, https://www.fishingmap.com.br, https://app.fishingmap.com.br"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+    nginx.ingress.kubernetes.io/cors-max-age: "3600"
+
+    # Rate Limiting
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+
+    # Request Size
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+
+    # Security Headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: geolocation=(self), camera=(), microphone=()";
+
+spec:
+  tls:
+  - hosts:
+    - api.fishingmap.com.br
+    secretName: api-fishingmap-tls
+
+  rules:
+  # API Backend
+  - host: api.fishingmap.com.br
+    http:
+      paths:
+      # Health check (sem autenticação)
+      - path: /health
+        pathType: Exact
+        backend:
+          service:
+            name: backend-api-service
+            port:
+              number: 80
+
+      # Documentação da API (Swagger/OpenAPI)
+      - path: /docs
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-api-service
+            port:
+              number: 80
+
+      # API v1
+      - path: /api/v1
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-api-service
+            port:
+              number: 80
+
+      # Fallback - todas as outras rotas
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-api-service
+            port:
+              number: 80
+
+---
+# ===========================================
+# Redirect www.api.fishingmap.com.br → api.fishingmap.com.br
+# ===========================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fishing-map-api-redirect
+  namespace: fishing-map
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/permanent-redirect: "https://api.fishingmap.com.br"
+spec:
+  tls:
+  - hosts:
+    - www.api.fishingmap.com.br
+    secretName: www-api-fishingmap-tls
+  rules:
+  - host: www.api.fishingmap.com.br
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-api-service
+            port:
+              number: 80

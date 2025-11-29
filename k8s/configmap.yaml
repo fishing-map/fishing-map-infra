@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fishing-map-config
+  namespace: fishing-map
+  labels:
+    app: fishing-map
+data:
+  # Application Settings
+  NODE_ENV: "production"
+  PORT: "3000"
+  LOG_LEVEL: "info"
+
+  # Domain Configuration
+  API_URL: "https://api.fishingmap.com.br"
+  FRONTEND_URL: "https://fishingmap.com.br"
+  APP_URL: "https://app.fishingmap.com.br"
+
+  # Redis Configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+
+  # Database Pool
+  DB_CONNECTION_POOL_MIN: "2"
+  DB_CONNECTION_POOL_MAX: "10"
+
+  # Rate Limiting
+  API_RATE_LIMIT: "100"
+  API_RATE_WINDOW: "60000"
+
+  # CORS Configuration
+  CORS_ORIGIN: "https://fishingmap.com.br,https://www.fishingmap.com.br,https://app.fishingmap.com.br"
+  CORS_CREDENTIALS: "true"
+
+  # File Upload
+  MAX_FILE_SIZE: "10485760" # 10MB
+
+  # Cookie Settings
+  COOKIE_DOMAIN: ".fishingmap.com.br"
+  COOKIE_SECURE: "true"
+  COOKIE_SAME_SITE: "strict"
+
+  # Object Storage (DigitalOcean Spaces)
+  STORAGE_ENDPOINT: "__SPACES_ENDPOINT__"
+  STORAGE_BUCKET: "__SPACES_BUCKET__"
+  STORAGE_REGION: "__SPACES_REGION__"
+  STORAGE_CDN_URL: "__SPACES_CDN_URL__"
+
+  # Upload Settings
+  UPLOAD_MAX_SIZE: "10485760" # 10MB
+  UPLOAD_ALLOWED_TYPES: "image/jpeg,image/png,image/webp,image/heic"
+
+  # Observability & Dev Tools URLs
+  SONARQUBE_URL: "https://sonarqube.fishingmap.com.br"
+  GRAFANA_URL: "https://grafana.fishingmap.com.br"
+  JAEGER_URL: "https://jaeger.fishingmap.com.br"
+  PROMETHEUS_URL: "http://prometheus-service:9090"
+  LOKI_URL: "http://loki-service:3100"
+
+  # Internal Services
+#  KAFKA_BROKER: "kafka-service:9092"
+#  ZOOKEEPER_CONNECT: "zookeeper-service:2181"

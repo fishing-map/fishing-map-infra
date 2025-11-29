@@ -1,0 +1,384 @@
+name: DigitalOcean Kubernetes Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options: [ plan, apply, destroy ]
+        default: plan
+        description: "Ação do Terraform (plan/apply/destroy)"
+      environment:
+        type: choice
+        options: [ dev, staging, prod ]
+        default: dev
+        description: "Ambiente para deploy"
+      enable_managed_database:
+        type: boolean
+        default: true
+        description: "Habilitar banco de dados gerenciado"
+      deploy_k8s_manifests:
+        type: boolean
+        default: false
+        description: "Deploy dos manifestos K8s após criar cluster"
+
+env:
+  TF_ROOT: infra
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  TF_BACKEND_BUCKET: ${{ vars.TF_BACKEND_BUCKET }}
+  TF_BACKEND_KEY: "fishing-map/digitalocean/terraform.tfstate"
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.x
+
+      - name: Configure AWS credentials (for S3 backend)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+        run: |
+          test -n "$AWS_ACCESS_KEY_ID" && test -n "$AWS_SECRET_ACCESS_KEY" || { echo "Missing AWS credentials for S3 backend"; exit 1; }
+          echo "AWS credentials configured for S3 backend"
+
+      - name: Validate DigitalOcean Token
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+        run: |
+          test -n "$DIGITALOCEAN_TOKEN" || { echo "Missing DIGITALOCEAN_TOKEN secret"; exit 1; }
+          echo "DigitalOcean token is present"
+
+      - name: Generate SSH Key (if not exists)
+        run: |
+          if [ ! -f ~/.ssh/id_rsa ]; then
+            ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
+            echo "Generated new SSH key"
+          fi
+          echo "SSH_PUBLIC_KEY<<EOF" >> $GITHUB_ENV
+          cat ~/.ssh/id_rsa.pub >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Terraform Init (S3 backend)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          terraform -chdir="$TF_ROOT" init -reconfigure \
+            -backend-config="bucket=${{ env.TF_BACKEND_BUCKET }}" \
+            -backend-config="key=${{ env.TF_BACKEND_KEY }}" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: Create terraform.tfvars
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+        run: |
+          cat > $TF_ROOT/terraform.tfvars << EOF
+          do_token = "$DIGITALOCEAN_TOKEN"
+          project_name = "fishing-map"
+          environment = "${{ github.event.inputs.environment || 'dev' }}"
+          enable_managed_database = ${{ github.event.inputs.enable_managed_database || false }}
+          domain_name = "${{ vars.DOMAIN_NAME || '' }}"
+          EOF
+
+      - name: Terraform Plan
+        if: ${{ github.event.inputs.action == 'plan' }}
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          terraform -chdir="$TF_ROOT" plan \
+            -var-file="terraform.tfvars"
+
+      - name: Terraform Apply
+        if: ${{ github.event.inputs.action == 'apply' }}
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          terraform -chdir="$TF_ROOT" apply -auto-approve \
+            -var-file="terraform.tfvars"
+
+      - name: Terraform Destroy
+        if: ${{ github.event.inputs.action == 'destroy' }}
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          terraform -chdir="$TF_ROOT" destroy -auto-approve \
+            -var-file="terraform.tfvars"
+
+      - name: Show Outputs
+        if: ${{ github.event.inputs.action == 'apply' }}
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+        run: |
+          echo "=== Kubernetes Cluster Information ==="
+          terraform -chdir="$TF_ROOT" output -json > outputs.json
+          
+          echo "Cluster Name: $(terraform -chdir="$TF_ROOT" output -raw cluster_name)"
+          echo "Cluster Region: $(terraform -chdir="$TF_ROOT" output -raw cluster_region)"
+          echo "Cluster Version: $(terraform -chdir="$TF_ROOT" output -raw cluster_version)"
+          echo "Registry Endpoint: $(terraform -chdir="$TF_ROOT" output -raw registry_endpoint)"
+          echo ""
+          echo "Kubeconfig Command: $(terraform -chdir="$TF_ROOT" output -raw kubeconfig_command)"
+
+      - name: Install doctl and kubectl
+        if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
+        run: |
+          # Install doctl
+          cd /tmp
+          wget https://github.com/digitalocean/doctl/releases/download/v1.104.0/doctl-1.104.0-linux-amd64.tar.gz
+          tar xf ./doctl-1.104.0-linux-amd64.tar.gz
+          sudo mv ./doctl /usr/local/bin
+          
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+      - name: Setup Kubernetes Access
+        if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+        run: |
+          # Authenticate doctl
+          doctl auth init --access-token $DIGITALOCEAN_TOKEN
+          
+          # Get cluster name and configure kubectl
+          CLUSTER_NAME=$(terraform -chdir="$TF_ROOT" output -raw cluster_name)
+          echo "Setting up kubectl for cluster: $CLUSTER_NAME"
+          doctl kubernetes cluster kubeconfig save $CLUSTER_NAME
+          
+          # Verify connection
+          kubectl get nodes
+          kubectl get namespaces
+
+      - name: Install Nginx Ingress Controller
+        if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
+        run: |
+          echo "📦 Instalando Nginx Ingress Controller..."
+          
+          # Adicionar repo Helm
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          helm repo update
+          
+          # Instalar ou atualizar Nginx Ingress
+          helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+            --namespace ingress-nginx \
+            --create-namespace \
+            --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-name"="fishing-map-nginx-lb" \
+            --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-protocol"="http" \
+            --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-size-slug"="lb-small" \
+            --set controller.publishService.enabled=true \
+            --set controller.metrics.enabled=true \
+            --set controller.podAnnotations."prometheus\.io/scrape"="true" \
+            --set controller.podAnnotations."prometheus\.io/port"="10254" \
+            --wait
+          
+          echo "Nginx Ingress Controller instalado"
+          
+          # Aguardar LoadBalancer IP
+          echo "Aguardando LoadBalancer IP..."
+          kubectl wait --for=condition=available --timeout=300s deployment/ingress-nginx-controller -n ingress-nginx
+          
+          # Mostrar IP do LoadBalancer
+          LB_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          echo "LoadBalancer IP: $LB_IP"
+          echo "NGINX_LB_IP=$LB_IP" >> $GITHUB_ENV
+
+      - name: Install cert-manager
+        if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
+        run: |
+          echo "Instalando cert-manager..."
+          
+          # Instalar cert-manager
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml
+          
+          # Aguardar pods ficarem prontos
+          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager -n cert-manager
+          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-webhook -n cert-manager
+          kubectl wait --for=condition=available --timeout=300s deployment/cert-manager-cainjector -n cert-manager
+          
+          echo "cert-manager instalado"
+
+      - name: Prepare Secrets from Terraform Outputs
+        if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
+        run: |
+          echo "Extraindo valores do Terraform..."
+          
+          # Extrair outputs do Terraform
+          cd $TF_ROOT
+          DB_HOST=$(terraform output -raw database_host 2>/dev/null || echo "")
+          DB_PORT=$(terraform output -raw database_port 2>/dev/null || echo "25060")
+          DB_NAME=$(terraform output -raw database_name 2>/dev/null || echo "fishing_map")
+          DB_USER=$(terraform output -raw database_user 2>/dev/null || echo "doadmin")
+          DB_PASSWORD=$(terraform output -raw database_password 2>/dev/null || echo "")
+          REGISTRY_ENDPOINT=$(terraform output -raw registry_endpoint)
+          
+          # Extrair Spaces outputs
+          SPACES_ENDPOINT=$(terraform output -raw spaces_assets_bucket_endpoint 2>/dev/null || echo "")
+          SPACES_BUCKET=$(terraform output -raw spaces_assets_bucket_name 2>/dev/null || echo "")
+          SPACES_REGION=$(terraform output -raw spaces_assets_bucket_region 2>/dev/null || echo "nyc3")
+          SPACES_CDN_URL=$(terraform output -raw spaces_assets_cdn_endpoint 2>/dev/null || echo "")
+          
+          # Exportar para próximos steps
+          echo "DB_HOST=$DB_HOST" >> $GITHUB_ENV
+          echo "DB_PORT=$DB_PORT" >> $GITHUB_ENV
+          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+          echo "DB_USER=$DB_USER" >> $GITHUB_ENV
+          echo "DB_PASSWORD=$DB_PASSWORD" >> $GITHUB_ENV
+          echo "REGISTRY_ENDPOINT=$REGISTRY_ENDPOINT" >> $GITHUB_ENV
+          echo "SPACES_ENDPOINT=$SPACES_ENDPOINT" >> $GITHUB_ENV
+          echo "SPACES_BUCKET=$SPACES_BUCKET" >> $GITHUB_ENV
+          echo "SPACES_REGION=$SPACES_REGION" >> $GITHUB_ENV
+          echo "SPACES_CDN_URL=$SPACES_CDN_URL" >> $GITHUB_ENV
+          
+          cd ..
+
+      - name: Deploy Kubernetes Manifests
+        if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          API_KEY_WEATHER: ${{ secrets.API_KEY_WEATHER }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          SPACES_ACCESS_KEY: ${{ secrets.SPACES_ACCESS_KEY }}
+          SPACES_SECRET_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+        run: |
+          echo "FishingMap - Deploy Automatizado no Kubernetes"
+          
+          # 1. Atualizar registry endpoint nos manifestos
+          echo "[1/7] Atualizando registry endpoint..."
+          find k8s/ -name "*.yaml" -exec sed -i "s|registry.digitalocean.com/fishing-map|${REGISTRY_ENDPOINT}|g" {} \;
+          
+          # 2. Preencher secrets automaticamente
+          echo "[2/7] Preenchendo secrets com valores do Terraform e GitHub Secrets..."
+          sed -i "s|__DB_HOST__|${DB_HOST}|g" k8s/secrets.yaml
+          sed -i "s|__DB_PORT__|${DB_PORT}|g" k8s/secrets.yaml
+          sed -i "s|__DB_NAME__|${DB_NAME}|g" k8s/secrets.yaml
+          sed -i "s|__DB_USER__|${DB_USER}|g" k8s/secrets.yaml
+          sed -i "s|__DB_PASSWORD__|${DB_PASSWORD}|g" k8s/secrets.yaml
+          sed -i "s|__REDIS_PASSWORD__|${REDIS_PASSWORD}|g" k8s/secrets.yaml
+          sed -i "s|__JWT_SECRET__|${JWT_SECRET}|g" k8s/secrets.yaml
+          sed -i "s|__API_KEY_WEATHER__|${API_KEY_WEATHER}|g" k8s/secrets.yaml
+          sed -i "s|__SPACES_ACCESS_KEY__|${SPACES_ACCESS_KEY}|g" k8s/secrets.yaml
+          sed -i "s|__SPACES_SECRET_KEY__|${SPACES_SECRET_KEY}|g" k8s/secrets.yaml
+          
+          # Preencher ConfigMap com Spaces
+          sed -i "s|__SPACES_ENDPOINT__|${SPACES_ENDPOINT}|g" k8s/configmap.yaml
+          sed -i "s|__SPACES_BUCKET__|${SPACES_BUCKET}|g" k8s/configmap.yaml
+          sed -i "s|__SPACES_REGION__|${SPACES_REGION}|g" k8s/configmap.yaml
+          sed -i "s|__SPACES_CDN_URL__|${SPACES_CDN_URL}|g" k8s/configmap.yaml
+          
+          # 3. Criar registry secret
+          echo "[3/7] Configurando acesso ao container registry..."
+          doctl registry login
+          kubectl create secret docker-registry registry-secret \
+            --from-file=.dockerconfigjson=$HOME/.docker/config.json \
+            --namespace=fishing-map \
+            --dry-run=client -o yaml | kubectl apply -f - || true
+          
+          # 4. Aplicar namespace
+          echo "[4/7] Criando namespace..."
+          kubectl apply -f k8s/namespace.yaml
+          
+          # 5. Aplicar secrets e configs
+          echo "[5/7] Aplicando secrets e configurações..."
+          kubectl apply -f k8s/secrets.yaml
+          kubectl apply -f k8s/configmap.yaml
+          
+          # 6. Deploy Redis
+          echo "[6/7] Deployando Redis..."
+          kubectl apply -f k8s/redis-deployment.yaml
+          kubectl wait --for=condition=available --timeout=300s deployment/redis -n fishing-map
+          
+          # 7. Executar migrations
+          echo "[7/7] Executando migrations do banco..."
+          kubectl delete job db-migrations -n fishing-map --ignore-not-found=true
+          kubectl apply -f k8s/migrations-job.yaml
+          kubectl wait --for=condition=complete --timeout=600s job/db-migrations -n fishing-map || {
+            echo "⚠Migrations falharam, verificando logs..."
+            kubectl logs -l app=migrations -n fishing-map --tail=50
+            exit 1
+          }
+          
+          # 8. Deploy Backend
+          echo "[8/7] Deployando Backend API..."
+          kubectl apply -f k8s/backend-deployment.yaml
+          kubectl apply -f k8s/autoscaling.yaml
+          kubectl wait --for=condition=available --timeout=300s deployment/backend-api -n fishing-map
+          
+          # 9. Deploy cert-manager ClusterIssuer
+          echo "[9/10] Configurando ClusterIssuer (Let's Encrypt)..."
+          kubectl apply -f k8s/cert-manager-issuer.yaml
+          sleep 5
+          
+          # 10. Deploy Nginx Ingress
+          echo "[10/10] Configurando Nginx Ingress (SSL automático)..."
+          kubectl apply -f k8s/ingress-nginx.yaml
+          
+          # Aguardar certificado ser emitido
+          echo "Aguardando emissão do certificado SSL..."
+          sleep 30
+          kubectl get certificate -n fishing-map || true
+          
+          echo ""
+          echo "Deploy automatizado concluído com sucesso!"
+          echo ""
+          echo "Nginx LoadBalancer IP: ${NGINX_LB_IP}"
+          echo "SSL Certificate: Será emitido automaticamente pelo cert-manager"
+          echo ""
+          echo "Configure os seguintes registros DNS:"
+          echo "   A    api.fishingmap.com.br     ${NGINX_LB_IP}"
+          echo "   A    fishingmap.com.br         ${NGINX_LB_IP}"
+          echo "   A    www.fishingmap.com.br     ${NGINX_LB_IP}"
+          echo "   A    app.fishingmap.com.br     ${NGINX_LB_IP}"
+          echo ""
+          echo "Após configurar o DNS, acesse: https://api.fishingmap.com.br/health"
+
+      - name: Show Cluster Status
+        if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
+        run: |
+          echo "=== Cluster Status ==="
+          kubectl get nodes -o wide
+          
+          echo "=== Pods Status ==="
+          kubectl get pods -n fishing-map -o wide
+          
+          echo "=== Services Status ==="
+          kubectl get svc -n fishing-map -o wide
+          
+          echo "=== LoadBalancer IP ==="
+          kubectl get svc backend-loadbalancer -n fishing-map -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "LoadBalancer IP not ready yet"
+
+      - name: Next Steps
+        if: ${{ github.event.inputs.action == 'apply' }}
+        run: |
+          echo "=== Next Steps ==="
+          echo "1. Configure kubectl locally:"
+          echo "   doctl auth init --access-token <your-token>"
+          echo "   doctl kubernetes cluster kubeconfig save $(terraform -chdir="$TF_ROOT" output -raw cluster_name)"
+          echo ""
+          echo "2. Update secrets with real values:"
+          echo "   kubectl edit secret fishing-map-secrets -n fishing-map"
+          echo ""
+          echo "3. Build and push your application images:"
+          echo "   docker build -t $(terraform -chdir="$TF_ROOT" output -raw registry_endpoint)/fishing-map-backend:latest ."
+          echo "   docker push $(terraform -chdir="$TF_ROOT" output -raw registry_endpoint)/fishing-map-backend:latest"
+          echo ""
+          echo "4. Deploy migrations project separately"
+          echo "5. Configure domain DNS to point to LoadBalancer IP"
+          echo "6. Install cert-manager for SSL certificates"

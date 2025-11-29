@@ -1,0 +1,69 @@
+# DigitalOcean Configuration
+do_token = "your_digitalocean_api_token_here"
+
+# Project Settings
+project_name = "fishing-map"
+environment  = "dev"  # dev, staging, prod
+
+# Kubernetes Cluster Configuration
+cluster_region      = "sao1"              # São Paulo, Brazil
+kubernetes_version  = "1.29.1-do.0"       # Versão do K8s
+node_pool_size      = "s-2vcpu-4gb"       # Tamanho dos nodes (~$24/node/mês)
+node_pool_count     = 2                   # Quantidade inicial de nodes
+node_pool_min_nodes = 1                   # Mínimo para autoscaling
+node_pool_max_nodes = 5                   # Máximo para autoscaling
+
+# Domain Configuration (opcional)
+domain_name = ""  # Example: "yourdomain.com"
+
+# Database Configuration
+enable_managed_database = true                # Recomendado para K8s
+database_size          = "db-s-2vcpu-4gb"    # Tamanho do banco gerenciado
+
+# Load Balancer Configuration
+enable_load_balancer = true    # LoadBalancer gerenciado ($12/mês)
+enable_monitoring   = true     # Monitoramento avançado
+
+# Spaces (Object Storage)
+spaces_region = "nyc3"          # nyc3, ams3, sfo3, sgp1
+enable_spaces_cdn = true        # CDN para assets públicos
+
+# Exemplos de configurações por ambiente:
+
+# DESENVOLVIMENTO (MVP - Teste)
+# node_pool_size = "s-1vcpu-2gb"         # $12/node/mês
+# node_pool_count = 1
+# enable_managed_database = false        # Use PostgreSQL no cluster
+# enable_load_balancer = true
+
+# STAGING (Testes de carga)
+# node_pool_size = "s-2vcpu-4gb"         # $24/node/mês
+# node_pool_count = 2
+# enable_managed_database = true         # +$30/mês
+# database_size = "db-s-2vcpu-4gb"
+
+# PRODUÇÃO INICIAL (100-1000 usuários)
+# node_pool_size = "s-2vcpu-4gb"         # $24/node/mês
+# node_pool_count = 3
+# node_pool_max_nodes = 8
+# enable_managed_database = true         # +$30/mês
+# database_size = "db-s-2vcpu-4gb"
+
+# CRESCIMENTO (1000-5000 usuários)
+# node_pool_size = "s-4vcpu-8gb"         # $48/node/mês
+# node_pool_count = 3
+# node_pool_max_nodes = 10
+# database_size = "db-s-4vcpu-8gb"       # +$60/mês
+
+# ESCALA (5000+ usuários)
+# node_pool_size = "s-8vcpu-16gb"        # $96/node/mês
+# node_pool_count = 5
+# node_pool_max_nodes = 20
+# database_size = "db-s-8vcpu-16gb"      # +$120/mês
+
+# ESTIMATIVAS DE CUSTO TOTAL:
+# Dev:        1 node + LB = ~$36/mês
+# Staging:    2 nodes + DB + LB = ~$78/mês
+# Prod Ini:   3 nodes + DB + LB = ~$114/mês
+# Crescimento: 3-8 nodes + DB + LB = ~$186-474/mês
+# Escala:     5-20 nodes + DB + LB = ~$592-2032/mês

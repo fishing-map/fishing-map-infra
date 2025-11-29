@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+  namespace: fishing-map
+  labels:
+    app: backend-api
+    component: api
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: backend-api
+  template:
+    metadata:
+      labels:
+        app: backend-api
+        component: api
+    spec:
+      imagePullSecrets:
+      - name: registry-secret
+
+      containers:
+      - name: backend
+        image: registry.digitalocean.com/fishing-map/backend:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+
+        env:
+        # Application Config
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: fishing-map-config
+              key: NODE_ENV
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: fishing-map-config
+              key: PORT
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: fishing-map-config
+              key: LOG_LEVEL
+
+        # Database Config
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_PORT
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_NAME
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_PASSWORD
+
+        # Redis Config
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: fishing-map-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: fishing-map-config
+              key: REDIS_PORT
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: REDIS_PASSWORD
+
+        # Security
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: JWT_SECRET
+
+        # External APIs
+        - name: API_KEY_WEATHER
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: API_KEY_WEATHER
+
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+
+        # Probes para garantir disponibilidade
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
+
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-api-service
+  namespace: fishing-map
+  labels:
+    app: backend-api
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 3000
+    protocol: TCP
+  selector:
+    app: backend-api

@@ -1,0 +1,218 @@
+# ===========================================
+# Database Migrations Job
+# ===========================================
+# Job separado para executar migrations do banco
+# Imagem: fishing-map-migrations (projeto separado)
+# ===========================================
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrations
+  namespace: fishing-map
+  labels:
+    app: migrations
+    component: database-setup
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: migrations
+        component: database-setup
+    spec:
+      restartPolicy: OnFailure
+      imagePullSecrets:
+      - name: registry-secret
+
+      initContainers:
+      # Aguardar o banco estar pronto antes de executar migrations
+      - name: wait-for-database
+        image: postgres:15-alpine
+        command:
+        - sh
+        - -c
+        - |
+          echo "⏳ Aguardando banco de dados ficar disponível..."
+          until pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER; do
+            echo "   Banco ainda não está pronto, aguardando..."
+            sleep 3
+          done
+          echo "✓ Banco de dados está pronto!"
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_PORT
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_USER
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_PASSWORD
+
+      containers:
+      - name: migrations
+        image: registry.digitalocean.com/fishing-map/migrations:latest
+        imagePullPolicy: Always
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_PORT
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_NAME
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: fishing-map-secrets
+              key: DB_PASSWORD
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔧 Iniciando Migrations do Banco de Dados"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          echo "📊 Verificando status das migrations..."
+          npm run migrate:status || true
+          
+          echo ""
+          echo "🚀 Executando migrations pendentes..."
+          npm run migrate:up
+          
+          echo ""
+          echo "🗺️  Configurando extensão PostGIS..."
+          npm run setup:postgis || true
+          
+          echo ""
+          echo "🌱 Executando seeds de produção..."
+          npm run seed:production || true
+          
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Migrations concluídas com sucesso!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+
+---
+# ===========================================
+# CronJob para Verificação Periódica
+# ===========================================
+# Verifica e aplica novas migrations automaticamente
+# ===========================================
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-migrations-check
+  namespace: fishing-map
+  labels:
+    app: migrations
+    component: periodic-check
+spec:
+  schedule: "0 6 * * 1" # Toda segunda-feira às 6h
+  suspend: false
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 1800
+      template:
+        metadata:
+          labels:
+            app: migrations
+            component: periodic-check
+        spec:
+          restartPolicy: OnFailure
+          imagePullSecrets:
+          - name: registry-secret
+          containers:
+          - name: migrations-check
+            image: registry.digitalocean.com/fishing-map/migrations:latest
+            imagePullPolicy: Always
+            env:
+            - name: NODE_ENV
+              value: "production"
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fishing-map-secrets
+                  key: DB_PASSWORD
+            command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "🔍 Verificando migrations pendentes..."
+              npm run migrate:status
+              
+              echo ""
+              echo "🔄 Aplicando migrations pendentes (se houver)..."
+              npm run migrate:up
+              
+              echo ""
+              echo "✅ Verificação de migrations concluída!"
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "50m"
+              limits:
+                memory: "256Mi"
+                cpu: "100m"
