@@ -119,6 +119,8 @@ jobs:
         if: ${{ github.event.inputs.action == 'apply' }}
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
         run: |
           echo "=== Kubernetes Cluster Information ==="
           terraform -chdir="$TF_ROOT" output -json > outputs.json
@@ -147,6 +149,8 @@ jobs:
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
         run: |
           # Authenticate doctl
           doctl auth init --access-token $DIGITALOCEAN_TOKEN
@@ -232,6 +236,9 @@ jobs:
 
       - name: Prepare Secrets from Terraform Outputs
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
         run: |
           echo "Extraindo valores do Terraform..."
           
@@ -269,8 +276,8 @@ jobs:
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-          SPACES_ACCESS_KEY: ${{ secrets.SPACES_ACCESS_KEY }}
-          SPACES_SECRET_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
         run: |
           echo "FishingMap - Deploy Automatizado no Kubernetes"
           
