@@ -12,19 +12,11 @@ terraform {
     }
   }
 
-  # Backend usando DigitalOcean Spaces (S3-compatible)
   backend "s3" {
-    # Configuração fornecida via CLI ou variáveis de ambiente
-    # O bucket 'fishing-map-{env}-terraform-state' será criado via Terraform
-    #
-    # Para inicializar com backend remoto:
-    # terraform init \
-    #   -backend-config="endpoint=https://nyc3.digitaloceanspaces.com" \
-    #   -backend-config="bucket=fishing-map-dev-terraform-state" \
-    #   -backend-config="key=terraform.tfstate" \
-    #   -backend-config="region=us-east-1" \
-    #   -backend-config="skip_credentials_validation=true" \
-    #   -backend-config="skip_metadata_api_check=true"
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    skip_requesting_account_id  = true
+    use_path_style              = false
   }
 }
 

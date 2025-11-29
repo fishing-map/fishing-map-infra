@@ -69,15 +69,16 @@ jobs:
           cat ~/.ssh/id_rsa.pub >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-      - name: Terraform Init (S3 backend)
+      - name: Terraform Init (DigitalOcean Spaces Backend)
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
         run: |
           terraform -chdir="$TF_ROOT" init -reconfigure \
-            -backend-config="bucket=${{ env.TF_BACKEND_BUCKET }}" \
-            -backend-config="key=${{ env.TF_BACKEND_KEY }}" \
-            -backend-config="region=${{ env.AWS_REGION }}"
+            -backend-config="endpoint=https://nyc3.digitaloceanspaces.com" \
+            -backend-config="bucket=fishing-map-${{ github.event.inputs.environment || 'dev' }}-terraform-state" \
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="region=us-east-1"
 
       - name: Create terraform.tfvars
         env:
@@ -95,8 +96,6 @@ jobs:
         if: ${{ github.event.inputs.action == 'plan' }}
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           terraform -chdir="$TF_ROOT" plan \
             -var-file="terraform.tfvars"
@@ -105,8 +104,6 @@ jobs:
         if: ${{ github.event.inputs.action == 'apply' }}
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           terraform -chdir="$TF_ROOT" apply -auto-approve \
             -var-file="terraform.tfvars"
@@ -169,7 +166,7 @@ jobs:
       - name: Install Nginx Ingress Controller
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
         run: |
-          echo "📦 Instalando Nginx Ingress Controller..."
+          echo "Instalando Nginx Ingress Controller..."
           
           # Adicionar repo Helm
           helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
@@ -365,7 +362,7 @@ jobs:
           echo "Nginx LoadBalancer IP: ${NGINX_LB_IP}"
           echo "SSL Certificate: Será emitido automaticamente pelo cert-manager"
           echo ""
-          echo "📋 Configure os seguintes registros DNS:"
+          echo "Configure os seguintes registros DNS:"
           echo "   A    api.fishingmap.com.br         ${NGINX_LB_IP}"
           echo "   A    fishingmap.com.br             ${NGINX_LB_IP}"
           echo "   A    www.fishingmap.com.br         ${NGINX_LB_IP}"
