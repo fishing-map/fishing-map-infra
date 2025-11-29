@@ -24,9 +24,6 @@ on:
 
 env:
   TF_ROOT: infra
-  AWS_REGION: ${{ vars.AWS_REGION }}
-  TF_BACKEND_BUCKET: ${{ vars.TF_BACKEND_BUCKET }}
-  TF_BACKEND_KEY: "fishing-map/digitalocean/terraform.tfstate"
 
 jobs:
   terraform:
@@ -43,14 +40,6 @@ jobs:
         with:
           terraform_version: 1.6.x
 
-      - name: Configure AWS credentials (for S3 backend)
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
-        run: |
-          test -n "$AWS_ACCESS_KEY_ID" && test -n "$AWS_SECRET_ACCESS_KEY" || { echo "Missing AWS credentials for S3 backend"; exit 1; }
-          echo "AWS credentials configured for S3 backend"
 
       - name: Validate DigitalOcean Token
         env:
