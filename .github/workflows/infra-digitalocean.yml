@@ -444,8 +444,8 @@ jobs:
           fi
           echo ""
           
-          # 9. Aplicar ClusterIssuer do cert-manager PRIMEIRO
-          echo "[9/10] Configurando cert-manager ClusterIssuer..."
+          # 10. Aplicar ClusterIssuer do cert-manager PRIMEIRO
+          echo "[10/11] Configurando cert-manager ClusterIssuer..."
           kubectl apply -f k8s/cert-manager-issuer.yaml
           
           echo "Aguardando ClusterIssuer ficar pronto..."
@@ -454,6 +454,11 @@ jobs:
           
           # 11. Deploy Ingress (rotas dos dominios) - DEPOIS dos pods estarem prontos
           echo "[11/11] Configurando Ingress..."
+          
+          # Deletar e recriar ingress devtools para garantir que mudancas sejam aplicadas
+          echo "Recriando ingress devtools..."
+          kubectl delete ingress devtools-ingress -n fishing-map --ignore-not-found=true
+          sleep 3
           kubectl apply -f k8s/devtools/ingress.yaml
           
           echo "Aguardando ingress ser criado..."

@@ -21,7 +21,6 @@ spec:
     - grafana.fishingmap.com.br
     - prometheus.fishingmap.com.br
     - jaeger.fishingmap.com.br
-    - argocd.fishingmap.com.br
     secretName: devtools-fishingmap-tls
 
   rules:
