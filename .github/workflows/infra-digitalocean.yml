@@ -246,12 +246,16 @@ jobs:
           echo "Aguardando ArgoCD ficar pronto..."
           kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
           
+          # Configurar ingress do ArgoCD
+          echo "Configurando ingress do ArgoCD..."
+          kubectl apply -f k8s/argocd/ingress.yaml
+          
           # Obter senha inicial do admin
           ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
           echo "ArgoCD Admin Password: $ARGOCD_PASSWORD"
           echo "ARGOCD_PASSWORD=$ARGOCD_PASSWORD" >> $GITHUB_ENV
           
-          echo "ArgoCD instalado"
+          echo "ArgoCD instalado e ingress configurado"
 
       - name: Prepare Secrets from Terraform Outputs
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
@@ -362,18 +366,6 @@ jobs:
           
           # 7. Deploy Stack de Observabilidade (Grafana, Prometheus, Loki, Jaeger)
           echo "[7/10] Deployando stack de observabilidade..."
-          
-          # Limpar deployments problematicos
-          echo "Limpando deployments antigos..."
-          kubectl delete deployment prometheus grafana loki -n fishing-map --ignore-not-found=true
-          kubectl delete pod -l app=prometheus -n fishing-map --ignore-not-found=true --force --grace-period=0
-          kubectl delete pod -l app=grafana -n fishing-map --ignore-not-found=true --force --grace-period=0
-          kubectl delete pod -l app=loki -n fishing-map --ignore-not-found=true --force --grace-period=0
-          
-          echo "Aguardando limpeza..."
-          sleep 10
-          
-          echo "Aplicando stack simplificada..."
           kubectl apply -f k8s/observability/configmaps.yaml
           kubectl apply -f k8s/observability/stack-simple.yaml
           
@@ -422,6 +414,16 @@ jobs:
           
           # 8. Deploy DevTools (SonarQube)
           echo "[8/10] Deployando DevTools (SonarQube)..."
+          
+          # Limpar deployments problematicos do SonarQube
+          echo "Limpando SonarQube antigo..."
+          kubectl delete deployment sonarqube sonarqube-postgres -n fishing-map --ignore-not-found=true
+          kubectl delete pod -l app=sonarqube -n fishing-map --ignore-not-found=true --force --grace-period=0
+          kubectl delete pod -l app=sonarqube-postgres -n fishing-map --ignore-not-found=true --force --grace-period=0
+          
+          echo "Aguardando limpeza..."
+          sleep 10
+          
           kubectl apply -f k8s/devtools/sonarqube.yaml
           
           echo "Aguardando SonarQube PostgreSQL..."
@@ -475,7 +477,8 @@ jobs:
           kubectl describe certificate -n fishing-map devtools-fishingmap-tls || echo "Certificado nao encontrado"
           
           echo ""
-          echo "Ingress configurado para: grafana, prometheus, jaeger, sonarqube, argocd"
+          echo "Ingress DevTools configurado para: grafana, prometheus, jaeger, sonarqube"
+          echo "Ingress ArgoCD configurado separadamente (namespace argocd)"
           echo ""
           echo "Infraestrutura base criada com sucesso!"
           echo ""

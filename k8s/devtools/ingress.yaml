@@ -71,14 +71,3 @@ spec:
             port:
               number: 16686
 
-  # ArgoCD (GitOps)
-  - host: argocd.fishingmap.com.br
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: argocd-server
-            port:
-              number: 443
