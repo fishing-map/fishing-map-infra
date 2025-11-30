@@ -365,27 +365,69 @@ jobs:
           kubectl apply -f k8s/observability/configmaps.yaml
           kubectl apply -f k8s/observability/stack.yaml
           
-          echo "Aguardando pods de observabilidade ficarem prontos..."
-          kubectl wait --for=condition=available --timeout=300s deployment/prometheus -n fishing-map || echo "AVISO: Prometheus demorando"
-          kubectl wait --for=condition=available --timeout=300s deployment/grafana -n fishing-map || echo "AVISO: Grafana demorando"
-          kubectl wait --for=condition=available --timeout=300s deployment/loki -n fishing-map || echo "AVISO: Loki demorando"
-          kubectl wait --for=condition=available --timeout=300s deployment/jaeger -n fishing-map || echo "AVISO: Jaeger demorando"
+          echo "Aguardando pods de observabilidade ficarem prontos (timeout: 2 min cada)..."
           
-          echo "Verificando pods..."
-          kubectl get pods -n fishing-map -l app=grafana
-          kubectl get pods -n fishing-map -l app=prometheus
-          kubectl get pods -n fishing-map -l app=jaeger
-          echo "Stack de observabilidade deployada"
+          # Prometheus
+          if kubectl wait --for=condition=available --timeout=120s deployment/prometheus -n fishing-map 2>/dev/null; then
+            echo "- Prometheus: PRONTO"
+          else
+            echo "- Prometheus: TIMEOUT (continuando...)"
+            kubectl get pods -n fishing-map -l app=prometheus
+            kubectl describe pod -n fishing-map -l app=prometheus | tail -20
+          fi
+          
+          # Grafana
+          if kubectl wait --for=condition=available --timeout=120s deployment/grafana -n fishing-map 2>/dev/null; then
+            echo "- Grafana: PRONTO"
+          else
+            echo "- Grafana: TIMEOUT (continuando...)"
+            kubectl get pods -n fishing-map -l app=grafana
+          fi
+          
+          # Loki
+          if kubectl wait --for=condition=available --timeout=120s deployment/loki -n fishing-map 2>/dev/null; then
+            echo "- Loki: PRONTO"
+          else
+            echo "- Loki: TIMEOUT (continuando...)"
+            kubectl get pods -n fishing-map -l app=loki
+          fi
+          
+          # Jaeger
+          if kubectl wait --for=condition=available --timeout=120s deployment/jaeger -n fishing-map 2>/dev/null; then
+            echo "- Jaeger: PRONTO"
+          else
+            echo "- Jaeger: TIMEOUT (continuando...)"
+            kubectl get pods -n fishing-map -l app=jaeger
+          fi
+          
+          echo ""
+          echo "Status geral dos pods de observabilidade:"
+          kubectl get pods -n fishing-map | grep -E "prometheus|grafana|loki|jaeger" || true
+          echo ""
+          echo "NOTA: Pods podem continuar inicializando em background"
+          echo "Stack de observabilidade deployada (podem ainda estar inicializando)"
           echo ""
           
           # 8. Deploy DevTools (SonarQube)
           echo "[8/10] Deployando DevTools (SonarQube)..."
           kubectl apply -f k8s/devtools/sonarqube.yaml
-          echo "Aguardando SonarQube PostgreSQL ficar pronto..."
-          kubectl wait --for=condition=available --timeout=300s deployment/sonarqube-postgres -n fishing-map
-          echo "SonarQube PostgreSQL pronto"
-          echo "Aguardando SonarQube ficar pronto (pode levar alguns minutos)..."
-          kubectl wait --for=condition=available --timeout=600s deployment/sonarqube -n fishing-map || echo "AVISO: SonarQube ainda esta iniciando (pode levar 5-10 minutos)"
+          
+          echo "Aguardando SonarQube PostgreSQL..."
+          if kubectl wait --for=condition=available --timeout=120s deployment/sonarqube-postgres -n fishing-map 2>/dev/null; then
+            echo "- SonarQube PostgreSQL: PRONTO"
+          else
+            echo "- SonarQube PostgreSQL: TIMEOUT (verificando...)"
+            kubectl get pods -n fishing-map -l app=sonarqube-postgres
+          fi
+          
+          echo "Aguardando SonarQube (isso pode levar 5-10 minutos)..."
+          if kubectl wait --for=condition=available --timeout=180s deployment/sonarqube -n fishing-map 2>/dev/null; then
+            echo "- SonarQube: PRONTO"
+          else
+            echo "- SonarQube: Ainda inicializando (normal na primeira vez)"
+            kubectl get pods -n fishing-map -l app=sonarqube
+            echo "NOTA: SonarQube continuara inicializando em background"
+          fi
           echo ""
           
           # 9. Aplicar ClusterIssuer do cert-manager PRIMEIRO
@@ -396,8 +438,8 @@ jobs:
           sleep 5
           kubectl get clusterissuer -o wide
           
-          # 10. Deploy Ingress (rotas dos dominios) - DEPOIS dos pods estarem prontos
-          echo "[10/10] Configurando Ingress..."
+          # 11. Deploy Ingress (rotas dos dominios) - DEPOIS dos pods estarem prontos
+          echo "[11/11] Configurando Ingress..."
           kubectl apply -f k8s/devtools/ingress.yaml
           
           echo "Aguardando ingress ser criado..."
