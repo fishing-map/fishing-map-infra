@@ -364,38 +364,78 @@ jobs:
           echo "[7/10] Deployando stack de observabilidade..."
           kubectl apply -f k8s/observability/configmaps.yaml
           kubectl apply -f k8s/observability/stack.yaml
-          echo "✅ Grafana, Prometheus, Loki, Jaeger e Promtail deployados"
+          
+          echo "Aguardando pods de observabilidade ficarem prontos..."
+          kubectl wait --for=condition=available --timeout=300s deployment/prometheus -n fishing-map || echo "AVISO: Prometheus demorando"
+          kubectl wait --for=condition=available --timeout=300s deployment/grafana -n fishing-map || echo "AVISO: Grafana demorando"
+          kubectl wait --for=condition=available --timeout=300s deployment/loki -n fishing-map || echo "AVISO: Loki demorando"
+          kubectl wait --for=condition=available --timeout=300s deployment/jaeger -n fishing-map || echo "AVISO: Jaeger demorando"
+          
+          echo "Verificando pods..."
+          kubectl get pods -n fishing-map -l app=grafana
+          kubectl get pods -n fishing-map -l app=prometheus
+          kubectl get pods -n fishing-map -l app=jaeger
+          echo "Stack de observabilidade deployada"
           echo ""
           
           # 8. Deploy DevTools (SonarQube)
           echo "[8/10] Deployando DevTools (SonarQube)..."
           kubectl apply -f k8s/devtools/sonarqube.yaml
-          echo "⏳ Aguardando SonarQube PostgreSQL ficar pronto..."
+          echo "Aguardando SonarQube PostgreSQL ficar pronto..."
           kubectl wait --for=condition=available --timeout=300s deployment/sonarqube-postgres -n fishing-map
-          echo "✅ SonarQube PostgreSQL pronto"
-          echo "⏳ Aguardando SonarQube ficar pronto (pode levar alguns minutos)..."
-          kubectl wait --for=condition=available --timeout=600s deployment/sonarqube -n fishing-map || echo "⚠️  SonarQube ainda está iniciando (pode levar 5-10 minutos)"
+          echo "SonarQube PostgreSQL pronto"
+          echo "Aguardando SonarQube ficar pronto (pode levar alguns minutos)..."
+          kubectl wait --for=condition=available --timeout=600s deployment/sonarqube -n fishing-map || echo "AVISO: SonarQube ainda esta iniciando (pode levar 5-10 minutos)"
           echo ""
           
-          # 9. Deploy Ingress (rotas dos domínios)
-          echo "[9/10] Configurando Ingress e cert-manager..."
+          # 9. Aplicar ClusterIssuer do cert-manager PRIMEIRO
+          echo "[9/10] Configurando cert-manager ClusterIssuer..."
           kubectl apply -f k8s/cert-manager-issuer.yaml
+          
+          echo "Aguardando ClusterIssuer ficar pronto..."
+          sleep 5
+          kubectl get clusterissuer -o wide
+          
+          # 10. Deploy Ingress (rotas dos dominios) - DEPOIS dos pods estarem prontos
+          echo "[10/10] Configurando Ingress..."
           kubectl apply -f k8s/devtools/ingress.yaml
-          echo "Ingress configurado para: grafana, argocd"
+          
+          echo "Aguardando ingress ser criado..."
+          sleep 5
+          kubectl get ingress -n fishing-map
+          
+          echo "Aguardando certificados SSL serem emitidos (pode levar 2-3 minutos)..."
+          for i in {1..12}; do
+            CERT_STATUS=$(kubectl get certificate -n fishing-map devtools-fishingmap-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+            if [ "$CERT_STATUS" == "True" ]; then
+              echo "Certificado emitido com sucesso!"
+              break
+            fi
+            echo "Tentativa $i/12: Certificado ainda nao emitido..."
+            sleep 15
+          done
+          
           echo ""
-          echo "✅ Infraestrutura base criada com sucesso!"
+          echo "Status dos certificados:"
+          kubectl get certificate -n fishing-map -o wide || echo "Nenhum certificado encontrado"
+          kubectl describe certificate -n fishing-map devtools-fishingmap-tls || echo "Certificado nao encontrado"
+          
           echo ""
-          echo "📦 Serviços deployados:"
-          echo "  ✅ Redis (Cache)"
-          echo "  ✅ Prometheus (Métricas)"
-          echo "  ✅ Grafana (Dashboards)"
-          echo "  ✅ Loki (Logs)"
-          echo "  ✅ Promtail (Log Collector)"
-          echo "  ✅ Jaeger (Tracing)"
-          echo "  ✅ SonarQube (Code Quality)"
-          echo "  ✅ ArgoCD (GitOps)"
-          echo "  ✅ Ingress Controller (Nginx)"
-          echo "  ✅ cert-manager (SSL)"
+          echo "Ingress configurado para: grafana, prometheus, jaeger, sonarqube, argocd"
+          echo ""
+          echo "Infraestrutura base criada com sucesso!"
+          echo ""
+          echo "Servicos deployados:"
+          echo "  - Redis (Cache)"
+          echo "  - Prometheus (Metricas)"
+          echo "  - Grafana (Dashboards)"
+          echo "  - Loki (Logs)"
+          echo "  - Promtail (Log Collector)"
+          echo "  - Jaeger (Tracing)"
+          echo "  - SonarQube (Code Quality)"
+          echo "  - ArgoCD (GitOps)"
+          echo "  - Ingress Controller (Nginx)"
+          echo "  - cert-manager (SSL)"
           echo ""
           
           # Aguardar certificado ser emitido
@@ -478,8 +518,8 @@ jobs:
           kubectl logs -n ingress-nginx deployment/ingress-nginx-controller --tail=50 || echo "Nao foi possivel obter logs"
           
           echo ""
-          echo "=== LoadBalancer IP ==="
-          kubectl get svc backend-loadbalancer -n fishing-map -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "LoadBalancer IP not ready yet"
+          echo "=== Nginx LoadBalancer IP ==="
+          kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' || echo "Nginx LoadBalancer IP not ready yet"
 
       - name: Verify Infrastructure Status
         if: ${{ github.event.inputs.action == 'apply' }}

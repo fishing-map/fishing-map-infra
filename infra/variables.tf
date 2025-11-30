@@ -132,7 +132,7 @@ variable "node_pool_min_nodes" {
 variable "node_pool_max_nodes" {
   description = "Número máximo de nodes (auto-scaling)"
   type        = number
-  default     = 5
+  default     = 2
 }
 
 variable "node_pool_count" {
