@@ -362,8 +362,20 @@ jobs:
           
           # 7. Deploy Stack de Observabilidade (Grafana, Prometheus, Loki, Jaeger)
           echo "[7/10] Deployando stack de observabilidade..."
+          
+          # Limpar deployments problematicos
+          echo "Limpando deployments antigos..."
+          kubectl delete deployment prometheus grafana loki -n fishing-map --ignore-not-found=true
+          kubectl delete pod -l app=prometheus -n fishing-map --ignore-not-found=true --force --grace-period=0
+          kubectl delete pod -l app=grafana -n fishing-map --ignore-not-found=true --force --grace-period=0
+          kubectl delete pod -l app=loki -n fishing-map --ignore-not-found=true --force --grace-period=0
+          
+          echo "Aguardando limpeza..."
+          sleep 10
+          
+          echo "Aplicando stack simplificada..."
           kubectl apply -f k8s/observability/configmaps.yaml
-          kubectl apply -f k8s/observability/stack.yaml
+          kubectl apply -f k8s/observability/stack-simple.yaml
           
           echo "Aguardando pods de observabilidade ficarem prontos (timeout: 2 min cada)..."
           
