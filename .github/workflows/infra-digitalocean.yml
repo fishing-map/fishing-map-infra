@@ -196,7 +196,9 @@ jobs:
             --set controller.config.proxy-real-ip-cidr="0.0.0.0/0" \
             --set controller.config.enable-real-ip="true" \
             --set controller.metrics.enabled=true \
-            --set controller.metrics.serviceMonitor.enabled=true \
+            --set controller.metrics.serviceMonitor.enabled=false \
+            --set controller.metrics.service.annotations."prometheus\.io/scrape"="true" \
+            --set controller.metrics.service.annotations."prometheus\.io/port"="10254" \
             --set controller.podAnnotations."prometheus\.io/scrape"="true" \
             --set controller.podAnnotations."prometheus\.io/port"="10254" \
             --wait
