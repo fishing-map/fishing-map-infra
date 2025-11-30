@@ -172,36 +172,18 @@ jobs:
           # Criar namespace do ingress-nginx
           kubectl create namespace ingress-nginx --dry-run=client -o yaml | kubectl apply -f -
           
-          # Aplicar ConfigMap customizado do Nginx
-          echo "Aplicando configuracoes customizadas do Nginx..."
-          kubectl apply -f k8s/nginx-ingress-configmap.yaml
-          
           # Adicionar repo Helm
           helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
           helm repo update
           
-          # Instalar ou atualizar Nginx Ingress com configuracoes otimizadas
+          # Instalar ou atualizar Nginx Ingress usando values.yaml
+          echo "Instalando Nginx Ingress com configuracoes customizadas..."
           helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
             --namespace ingress-nginx \
             --create-namespace \
-            --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-name"="fishing-map-nginx-lb" \
-            --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-protocol"="http" \
-            --set controller.service.annotations."service\.beta\.kubernetes\.io/do-loadbalancer-size-slug"="lb-small" \
-            --set controller.publishService.enabled=true \
-            --set controller.ingressClassResource.default=true \
-            --set controller.service.externalTrafficPolicy=Local \
-            --set controller.config.use-forwarded-headers="true" \
-            --set controller.config.compute-full-forwarded-for="true" \
-            --set controller.config.use-proxy-protocol="false" \
-            --set controller.config.proxy-real-ip-cidr="0.0.0.0/0" \
-            --set controller.config.enable-real-ip="true" \
-            --set controller.metrics.enabled=true \
-            --set controller.metrics.serviceMonitor.enabled=false \
-            --set controller.metrics.service.annotations."prometheus\.io/scrape"="true" \
-            --set controller.metrics.service.annotations."prometheus\.io/port"="10254" \
-            --set controller.podAnnotations."prometheus\.io/scrape"="true" \
-            --set controller.podAnnotations."prometheus\.io/port"="10254" \
-            --wait
+            --values k8s/nginx-ingress-values.yaml \
+            --wait \
+            --timeout 10m
           
           echo "Nginx Ingress Controller instalado"
           
@@ -426,13 +408,13 @@ jobs:
           echo ""
           echo "Nginx LoadBalancer IP: ${NGINX_LB_IP}"
           echo ""
-          echo "🌐 Configure DNS (ou aguarde propagação se já configurou):"
+          echo "Configure DNS (ou aguarde propagacao se ja configurou):"
           echo "   A    fishingmap.com.br             ${NGINX_LB_IP}"
           echo "   A    www.fishingmap.com.br         ${NGINX_LB_IP}"
           echo "   A    api.fishingmap.com.br         ${NGINX_LB_IP}"
           echo "   A    app.fishingmap.com.br         ${NGINX_LB_IP}"
           echo ""
-          echo "📊 Observability & DevTools:"
+          echo "Observability & DevTools:"
           echo "   A    grafana.fishingmap.com.br     ${NGINX_LB_IP}"
           echo "   A    prometheus.fishingmap.com.br  ${NGINX_LB_IP}"
           echo "   A    jaeger.fishingmap.com.br      ${NGINX_LB_IP}"
