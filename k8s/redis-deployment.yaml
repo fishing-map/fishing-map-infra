@@ -50,17 +50,9 @@ spec:
         - name: redis
           containerPort: 6379
           protocol: TCP
-        env:
-        - name: REDIS_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: fishing-map-secrets
-              key: REDIS_PASSWORD
         command:
         - redis-server
         args:
-        - --requirepass
-        - $(REDIS_PASSWORD)
         - --appendonly
         - "yes"
         - --maxmemory
@@ -81,8 +73,6 @@ spec:
           exec:
             command:
             - redis-cli
-            - -a
-            - $(REDIS_PASSWORD)
             - ping
           initialDelaySeconds: 30
           periodSeconds: 10
@@ -92,8 +82,6 @@ spec:
           exec:
             command:
             - redis-cli
-            - -a
-            - $(REDIS_PASSWORD)
             - ping
           initialDelaySeconds: 5
           periodSeconds: 5
