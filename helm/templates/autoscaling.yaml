@@ -1,0 +1,86 @@
+{{- if .Values.resourceQuota.enabled }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: fishing-map-quota
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "fishing-map-infrastructure.labels" . | nindent 4 }}
+spec:
+  hard:
+    requests.cpu: "{{ .Values.resourceQuota.requests.cpu }}"
+    requests.memory: "{{ .Values.resourceQuota.requests.memory }}"
+    limits.cpu: "{{ .Values.resourceQuota.limits.cpu }}"
+    limits.memory: "{{ .Values.resourceQuota.limits.memory }}"
+    persistentvolumeclaims: "{{ .Values.resourceQuota.pvcs }}"
+    services.loadbalancers: "{{ .Values.resourceQuota.loadbalancers }}"
+{{- end }}
+---
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-api-pdb
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: backend-api
+    {{- include "fishing-map-infrastructure.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app: backend-api
+{{- end }}
+---
+{{- if .Values.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-api-hpa
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: backend-api
+    {{- include "fishing-map-infrastructure.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend-api
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.hpa.targetCPUUtilization }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.hpa.targetMemoryUtilization }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 1
+        periodSeconds: 120
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Max
+{{- end }}
+

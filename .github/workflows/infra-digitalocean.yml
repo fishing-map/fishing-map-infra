@@ -181,7 +181,7 @@ jobs:
           helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
             --namespace ingress-nginx \
             --create-namespace \
-            --values k8s/nginx-ingress-values.yaml \
+            --values helm/nginx-ingress-values.yaml \
             --wait \
             --timeout 10m
           
@@ -246,16 +246,12 @@ jobs:
           echo "Aguardando ArgoCD ficar pronto..."
           kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
           
-          # Configurar ingress do ArgoCD
-          echo "Configurando ingress do ArgoCD..."
-          kubectl apply -f k8s/argocd/ingress.yaml
-          
           # Obter senha inicial do admin
           ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
           echo "ArgoCD Admin Password: $ARGOCD_PASSWORD"
           echo "ARGOCD_PASSWORD=$ARGOCD_PASSWORD" >> $GITHUB_ENV
           
-          echo "ArgoCD instalado e ingress configurado"
+          echo "ArgoCD instalado (ingress será configurado pelo Helm chart)"
 
       - name: Prepare Secrets from Terraform Outputs
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
@@ -300,178 +296,119 @@ jobs:
         env:
           DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
           REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET }}
+          API_KEY_WEATHER: ${{ secrets.API_KEY_WEATHER }}
+          PGADMIN_PASSWORD: ${{ secrets.PGADMIN_PASSWORD }}
+          SPACES_ACCESS_KEY: ${{ secrets.SPACES_ACCESS_KEY }}
+          SPACES_SECRET_KEY: ${{ secrets.SPACES_SECRET_KEY }}
         run: |
-          echo "FishingMap - Deploy Automatizado no Kubernetes"
+          echo "FishingMap - Deploy via Helm"
           
-          # 1. Atualizar registry endpoint nos manifestos
-          echo "[1/10] Atualizando registry endpoint..."
-          find k8s/ -name "*.yaml" -exec sed -i "s|registry.digitalocean.com/fishing-map|${REGISTRY_ENDPOINT}|g" {} \;
+          # Gerar senha do PgAdmin se não definida
+          if [ -z "$PGADMIN_PASSWORD" ]; then
+            PGADMIN_PASSWORD=$(openssl rand -base64 24)
+            echo "PgAdmin password gerada automaticamente"
+          fi
           
-          # 2. Preencher secrets automaticamente
-          echo "[2/7] Preenchendo secrets com valores do Terraform e GitHub Secrets..."
-          sed -i "s|__DB_HOST__|${DB_HOST}|g" k8s/secrets.yaml
-          sed -i "s|__DB_PORT__|${DB_PORT}|g" k8s/secrets.yaml
-          sed -i "s|__DB_NAME__|${DB_NAME}|g" k8s/secrets.yaml
-          sed -i "s|__DB_USER__|${DB_USER}|g" k8s/secrets.yaml
-          sed -i "s|__DB_PASSWORD__|${DB_PASSWORD}|g" k8s/secrets.yaml
-          sed -i "s|__REDIS_PASSWORD__|${REDIS_PASSWORD}|g" k8s/secrets.yaml
-          sed -i "s|__SPACES_ACCESS_KEY__|${SPACES_ACCESS_KEY}|g" k8s/secrets.yaml
-          sed -i "s|__SPACES_SECRET_KEY__|${SPACES_SECRET_KEY}|g" k8s/secrets.yaml
+          # Criar namespace
+          kubectl create namespace fishing-map --dry-run=client -o yaml | kubectl apply -f -
           
-          # JWT e API_KEY serão configurados depois via kubectl ou pipeline da aplicação
-          sed -i "s|__JWT_SECRET__|CHANGE_ME_LATER|g" k8s/secrets.yaml
-          sed -i "s|__REFRESH_TOKEN_SECRET__|CHANGE_ME_LATER|g" k8s/secrets.yaml
-          sed -i "s|__API_KEY_WEATHER__|CHANGE_ME_LATER|g" k8s/secrets.yaml
-          
-          # Preencher ConfigMap com Spaces
-          sed -i "s|__SPACES_ENDPOINT__|${SPACES_ENDPOINT}|g" k8s/configmap.yaml
-          sed -i "s|__SPACES_BUCKET__|${SPACES_BUCKET}|g" k8s/configmap.yaml
-          sed -i "s|__SPACES_REGION__|${SPACES_REGION}|g" k8s/configmap.yaml
-          sed -i "s|__SPACES_CDN_URL__|${SPACES_CDN_URL}|g" k8s/configmap.yaml
-          
-          # Preencher PgAdmin com credenciais do banco (para manutenção em produção)
-          echo "[2.1/10] Configurando PgAdmin com credenciais do banco..."
-          sed -i "s|__DB_HOST__|${DB_HOST}|g" k8s/pgadmin-deployment.yaml
-          sed -i "s|__DB_PORT__|${DB_PORT}|g" k8s/pgadmin-deployment.yaml
-          sed -i "s|__DB_USER__|${DB_USER}|g" k8s/pgadmin-deployment.yaml
-          sed -i "s|__DB_PASSWORD__|${DB_PASSWORD}|g" k8s/pgadmin-deployment.yaml
-          # Gera senha aleatória para PgAdmin (pode ser recuperada via kubectl get secret)
-          PGADMIN_PASSWORD=$(openssl rand -base64 24)
-          sed -i "s|__PGADMIN_PASSWORD__|${PGADMIN_PASSWORD}|g" k8s/pgadmin-deployment.yaml
-          echo "PgAdmin configurado (senha admin salva no secret)"
-          
-          # 3. Criar registry secret
-          echo "[3/10] Configurando acesso ao container registry..."
+          # Criar registry secret
+          echo "Configurando acesso ao container registry..."
           doctl registry login
+          kubectl delete secret registry-secret -n fishing-map --ignore-not-found=true
           kubectl create secret docker-registry registry-secret \
-            --from-file=.dockerconfigjson=$HOME/.docker/config.json \
-            --namespace=fishing-map \
-            --dry-run=client -o yaml | kubectl apply -f - || true
+            --docker-server=registry.digitalocean.com \
+            --docker-username=$DIGITALOCEAN_TOKEN \
+            --docker-password=$DIGITALOCEAN_TOKEN \
+            -n fishing-map
           
-          # 4. Aplicar namespace
-          echo "[4/10] Criando namespace..."
-          kubectl apply -f k8s/namespace.yaml
+          # Deploy Infrastructure via Helm
+          echo "Deploying infrastructure via Helm..."
+          helm upgrade --install fishing-map-infra ./helm \
+            --namespace fishing-map \
+            --set secrets.enabled=true \
+            --set secrets.database.host="${DB_HOST}" \
+            --set secrets.database.port="${DB_PORT}" \
+            --set secrets.database.name="${DB_NAME}" \
+            --set secrets.database.user="${DB_USER}" \
+            --set secrets.database.password="${DB_PASSWORD}" \
+            --set secrets.redis.password="${REDIS_PASSWORD}" \
+            --set secrets.jwt.secret="${JWT_SECRET}" \
+            --set secrets.jwt.refreshSecret="${REFRESH_TOKEN_SECRET}" \
+            --set secrets.weather.apiKey="${API_KEY_WEATHER}" \
+            --set secrets.spaces.accessKey="${SPACES_ACCESS_KEY}" \
+            --set secrets.spaces.secretKey="${SPACES_SECRET_KEY}" \
+            --set secrets.spaces.endpoint="${SPACES_ENDPOINT}" \
+            --set secrets.spaces.bucket="${SPACES_BUCKET}" \
+            --set secrets.spaces.region="${SPACES_REGION}" \
+            --set secrets.spaces.cdnUrl="${SPACES_CDN_URL}" \
+            --set redis.enabled=true \
+            --set pgadmin.enabled=true \
+            --set pgadmin.adminPassword="${PGADMIN_PASSWORD}" \
+            --set pgadmin.database.host="${DB_HOST}" \
+            --set pgadmin.database.port="${DB_PORT}" \
+            --set pgadmin.database.user="${DB_USER}" \
+            --set sonarqube.enabled=true \
+            --set observability.enabled=true \
+            --set ingress.devtools.enabled=true \
+            --set ingress.api.enabled=true \
+            --set argocd.enabled=true \
+            --wait \
+            --timeout 15m
           
-          # 5. Aplicar secrets e configs
-          echo "[5/10] Aplicando secrets e configurações..."
-          kubectl apply -f k8s/secrets.yaml
-          kubectl apply -f k8s/configmap.yaml
+          echo ""
+          echo "Aguardando pods ficarem prontos..."
           
-          # 6. Deploy Redis
-          echo "[6/8] Deployando Redis..."
-          kubectl apply -f k8s/redis-deployment.yaml
-          kubectl wait --for=condition=available --timeout=300s deployment/redis -n fishing-map
+          # Verificar Redis
+          if kubectl wait --for=condition=available --timeout=120s deployment/redis -n fishing-map 2>/dev/null; then
+            echo "- Redis: PRONTO"
+          else
+            echo "- Redis: TIMEOUT (continuando...)"
+          fi
           
-          # 7. Deploy Stack de Observabilidade (Grafana, Prometheus, Loki, Jaeger)
-          echo "[7/10] Deployando stack de observabilidade..."
-          kubectl apply -f k8s/observability/configmaps.yaml
-          kubectl apply -f k8s/observability/stack-simple.yaml
-          
-          echo "Aguardando pods de observabilidade ficarem prontos (timeout: 2 min cada)..."
-          
-          # Prometheus
+          # Verificar Prometheus
           if kubectl wait --for=condition=available --timeout=120s deployment/prometheus -n fishing-map 2>/dev/null; then
             echo "- Prometheus: PRONTO"
           else
             echo "- Prometheus: TIMEOUT (continuando...)"
-            kubectl get pods -n fishing-map -l app=prometheus
-            kubectl describe pod -n fishing-map -l app=prometheus | tail -20
           fi
           
-          # Grafana
+          # Verificar Grafana
           if kubectl wait --for=condition=available --timeout=120s deployment/grafana -n fishing-map 2>/dev/null; then
             echo "- Grafana: PRONTO"
           else
             echo "- Grafana: TIMEOUT (continuando...)"
-            kubectl get pods -n fishing-map -l app=grafana
           fi
           
-          # Loki
+          # Verificar Loki
           if kubectl wait --for=condition=available --timeout=120s deployment/loki -n fishing-map 2>/dev/null; then
             echo "- Loki: PRONTO"
           else
             echo "- Loki: TIMEOUT (continuando...)"
-            kubectl get pods -n fishing-map -l app=loki
           fi
           
-          # Jaeger
+          # Verificar Jaeger
           if kubectl wait --for=condition=available --timeout=120s deployment/jaeger -n fishing-map 2>/dev/null; then
             echo "- Jaeger: PRONTO"
           else
             echo "- Jaeger: TIMEOUT (continuando...)"
-            kubectl get pods -n fishing-map -l app=jaeger
           fi
           
-          echo ""
-          echo "Status geral dos pods de observabilidade:"
-          kubectl get pods -n fishing-map | grep -E "prometheus|grafana|loki|jaeger" || true
-          echo ""
-          echo "NOTA: Pods podem continuar inicializando em background"
-          echo "Stack de observabilidade deployada (podem ainda estar inicializando)"
-          echo ""
-          
-          # 8. Deploy DevTools (SonarQube)
-          echo "[8/10] Deployando DevTools (SonarQube)..."
-
-          kubectl apply -f k8s/devtools/sonarqube.yaml
-          
-          echo "Aguardando SonarQube PostgreSQL..."
-          if kubectl wait --for=condition=available --timeout=120s deployment/sonarqube-postgres -n fishing-map 2>/dev/null; then
-            echo "- SonarQube PostgreSQL: PRONTO"
-          else
-            echo "- SonarQube PostgreSQL: TIMEOUT (verificando...)"
-            kubectl get pods -n fishing-map -l app=sonarqube-postgres
-          fi
-          
-          echo "Aguardando SonarQube (isso pode levar 5-10 minutos)..."
-          if kubectl wait --for=condition=available --timeout=180s deployment/sonarqube -n fishing-map 2>/dev/null; then
+          # Verificar SonarQube
+          echo "Aguardando SonarQube (pode levar 5-10 minutos na primeira vez)..."
+          if kubectl wait --for=condition=available --timeout=300s deployment/sonarqube -n fishing-map 2>/dev/null; then
             echo "- SonarQube: PRONTO"
           else
             echo "- SonarQube: Ainda inicializando (normal na primeira vez)"
-            kubectl get pods -n fishing-map -l app=sonarqube
-            echo "NOTA: SonarQube continuara inicializando em background"
           fi
-          echo ""
-          
-          # 10. Aplicar ClusterIssuer do cert-manager PRIMEIRO
-          echo "[10/11] Configurando cert-manager ClusterIssuer..."
-          kubectl apply -f k8s/cert-manager-issuer.yaml
-          
-          echo "Aguardando ClusterIssuer ficar pronto..."
-          sleep 5
-          kubectl get clusterissuer -o wide
-          
-          # 11. Deploy Ingress (rotas dos dominios) - DEPOIS dos pods estarem prontos
-          echo "[11/11] Configurando Ingress..."
-          kubectl apply -f k8s/devtools/ingress.yaml
-          
-          echo "Aguardando ingress ser criado..."
-          sleep 5
-          kubectl get ingress -n fishing-map
-          
-          echo "Aguardando certificados SSL serem emitidos (pode levar 2-3 minutos)..."
-          for i in {1..12}; do
-            CERT_STATUS=$(kubectl get certificate -n fishing-map devtools-fishingmap-tls -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-            if [ "$CERT_STATUS" == "True" ]; then
-              echo "Certificado emitido com sucesso!"
-              break
-            fi
-            echo "Tentativa $i/12: Certificado ainda nao emitido..."
-            sleep 15
-          done
           
           echo ""
-          echo "Status dos certificados:"
-          kubectl get certificate -n fishing-map -o wide || echo "Nenhum certificado encontrado"
-          kubectl describe certificate -n fishing-map devtools-fishingmap-tls || echo "Certificado nao encontrado"
-          
+          echo "Infraestrutura deployada via Helm!"
           echo ""
-          echo "Ingress DevTools configurado para: grafana, prometheus, jaeger, sonarqube"
-          echo "Ingress ArgoCD configurado separadamente (namespace argocd)"
-          echo ""
-          echo "Infraestrutura base criada com sucesso!"
+          echo "Helm release:"
+          helm list -n fishing-map
           echo ""
           echo "Servicos deployados:"
           echo "  - Redis (Cache)"
@@ -481,58 +418,24 @@ jobs:
           echo "  - Promtail (Log Collector)"
           echo "  - Jaeger (Tracing)"
           echo "  - SonarQube (Code Quality)"
-          echo "  - ArgoCD (GitOps)"
-          echo "  - Ingress Controller (Nginx)"
-          echo "  - cert-manager (SSL)"
-          echo ""
-          
-          # Aguardar certificado ser emitido
-          echo "Aguardando certificados SSL (cert-manager)..."
-          sleep 15
-          kubectl get certificate -n fishing-map || true
-          
-          echo ""
-          echo "Deploy completo!"
+          echo "  - PgAdmin (Database Admin)"
           echo ""
           echo "Nginx LoadBalancer IP: ${NGINX_LB_IP}"
           echo ""
-          echo "Configure DNS (ou aguarde propagacao se ja configurou):"
-          echo "   A    fishingmap.com.br             ${NGINX_LB_IP}"
-          echo "   A    www.fishingmap.com.br         ${NGINX_LB_IP}"
+          echo "Configure DNS:"
           echo "   A    api.fishingmap.com.br         ${NGINX_LB_IP}"
-          echo "   A    app.fishingmap.com.br         ${NGINX_LB_IP}"
-          echo ""
-          echo "Observability & DevTools:"
           echo "   A    grafana.fishingmap.com.br     ${NGINX_LB_IP}"
           echo "   A    prometheus.fishingmap.com.br  ${NGINX_LB_IP}"
           echo "   A    jaeger.fishingmap.com.br      ${NGINX_LB_IP}"
-          echo "   A    sonarqube.fishingmap.com.br   ${NGINX_LB_IP}"
+          echo "   A    sonar.fishingmap.com.br       ${NGINX_LB_IP}"
+          echo "   A    pgadmin.fishingmap.com.br     ${NGINX_LB_IP}"
           echo "   A    argocd.fishingmap.com.br      ${NGINX_LB_IP}"
           echo ""
-          echo "Credenciais de Acesso:"
-          echo ""
-          echo "Observability Stack:"
-          echo "   Grafana: https://grafana.fishingmap.com.br"
-          echo "      User: admin"
-          echo "      Password: admin (altere apos primeiro login)"
-          echo ""
-          echo "   Prometheus: https://prometheus.fishingmap.com.br"
-          echo "      (Sem autenticacao - use apenas para debug)"
-          echo ""
-          echo "   Jaeger: https://jaeger.fishingmap.com.br"
-          echo "      (Sem autenticacao)"
-          echo ""
-          echo "DevTools:"
-          echo "   SonarQube: https://sonarqube.fishingmap.com.br"
-          echo "      User: admin"
-          echo "      Password: admin (altere apos primeiro login)"
-          echo "      AVISO: Primeira inicializacao pode levar 5-10 minutos"
-          echo ""
-          echo "   ArgoCD: https://argocd.fishingmap.com.br"
-          echo "      User: admin"
-          echo "      Password: ${ARGOCD_PASSWORD}"
-          echo ""
-          echo "Apos configurar o DNS, acesse: https://api.fishingmap.com.br/health"
+          echo "Credenciais:"
+          echo "   Grafana: admin / admin"
+          echo "   SonarQube: admin / admin"
+          echo "   PgAdmin: admin@fishingmap.com.br / (ver secret pgadmin-secret)"
+          echo "   ArgoCD: admin / ${ARGOCD_PASSWORD}"
 
       - name: Show Cluster Status
         if: ${{ github.event.inputs.action == 'apply' && github.event.inputs.deploy_k8s_manifests == 'true' }}
