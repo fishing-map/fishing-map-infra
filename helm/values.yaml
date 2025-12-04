@@ -1,4 +1,5 @@
 namespace: fishing-map
+namespace_create: false
 
 secrets:
   enabled: true
