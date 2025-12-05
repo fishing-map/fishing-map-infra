@@ -188,26 +188,20 @@ data:
     - job_name: kubernetes-pods
       kubernetes_sd_configs:
       - role: pod
-        namespaces:
-          names:
-          - {{ .Values.namespace }}
       relabel_configs:
-      - source_labels: [__meta_kubernetes_pod_controller_name]
-        regex: ([0-9a-z-.]+?)(-[0-9a-f]{8,10})?
-        action: replace
-        target_label: __tmp_controller_name
-      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name, __meta_kubernetes_pod_label_app, __tmp_controller_name, __meta_kubernetes_pod_name]
-        regex: ^;*([^;]+)(;.*)?$
-        action: replace
-        target_label: app
-      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance, __meta_kubernetes_pod_label_release]
-        regex: ^;*([^;]+)(;.*)?$
-        action: replace
-        target_label: instance
-      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_component, __meta_kubernetes_pod_label_component]
-        regex: ^;*([^;]+)(;.*)?$
-        action: replace
-        target_label: component
+      # Filtrar apenas pods do namespace fishing-map
+      - source_labels: [__meta_kubernetes_namespace]
+        action: keep
+        regex: {{ .Values.namespace }}
+      # Filtrar apenas pods no mesmo nó que este promtail
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        action: keep
+        regex: ${HOSTNAME}
+      # Excluir o próprio promtail para evitar loops
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: drop
+        regex: promtail
+      # Labels para identificação
       - source_labels: [__meta_kubernetes_pod_node_name]
         action: replace
         target_label: node_name
@@ -220,10 +214,21 @@ data:
       - source_labels: [__meta_kubernetes_pod_container_name]
         action: replace
         target_label: container
+      # Usar label app do pod, ou nome do pod como fallback
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: replace
+        target_label: app
+      # Fallback: extrair nome base do pod (ex: backend-api-7ff5f94fd-mwqlz -> backend-api)
+      - source_labels: [__meta_kubernetes_pod_name, __meta_kubernetes_pod_label_app]
+        action: replace
+        regex: (.*)-[a-z0-9]+-[a-z0-9]+;$
+        replacement: {{ `$1` }}
+        target_label: app
+      # Path para os logs usando glob pattern
       - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
         target_label: __path__
         separator: /
-        replacement: /var/log/pods/*$1/*.log
+        replacement: /var/log/pods/*{{ `$1` }}/{{ `$2` }}/*.log
       pipeline_stages:
       - cri: {}
 ---
@@ -575,6 +580,12 @@ spec:
         image: "{{ .Values.observability.promtail.image.repository }}:{{ .Values.observability.promtail.image.tag }}"
         args:
         - -config.file=/etc/promtail/config.yaml
+        - -config.expand-env=true
+        env:
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
         volumeMounts:
         - name: promtail-config
           mountPath: /etc/promtail
