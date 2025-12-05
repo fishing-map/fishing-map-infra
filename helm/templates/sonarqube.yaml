@@ -272,7 +272,7 @@ spec:
   selector:
     app: sonarqube
 ---
-{{- if .Values.sonarqube.ingress.enabled }}
+{{- if and .Values.sonarqube.ingress.enabled (not .Values.ingress.devtools.enabled) }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
