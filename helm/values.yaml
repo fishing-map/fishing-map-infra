@@ -81,7 +81,7 @@ pgadmin:
     tag: "latest"
     pullPolicy: IfNotPresent
   adminEmail: "adm.fishingmap@gmail.com"
-  adminPassword: "Fishingmap@2025"
+  adminPassword: "Fishingmap@2025"  # Set via --set pgadmin.adminPassword or GitHub secret
   database:
     host: ""
     port: "25060"
@@ -148,7 +148,7 @@ sonarqube:
       storageClassName: do-block-storage
   ingress:
     enabled: true
-    host: sonar.fishingmap.com.br
+    host: sonarqube.fishingmap.com.br
     className: nginx
     tls:
       enabled: true

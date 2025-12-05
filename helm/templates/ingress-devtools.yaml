@@ -18,13 +18,13 @@ spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - sonar.fishingmap.com.br
+    - sonarqube.fishingmap.com.br
     - grafana.fishingmap.com.br
     - prometheus.fishingmap.com.br
     - jaeger.fishingmap.com.br
     secretName: devtools-fishingmap-tls
   rules:
-  - host: sonar.fishingmap.com.br
+  - host: sonarqube.fishingmap.com.br
     http:
       paths:
       - path: /
