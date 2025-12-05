@@ -1,0 +1,95 @@
+name: Infrastructure - Terraform
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
+        description: "Terraform action"
+      environment:
+        type: choice
+        options: [dev, staging, prod]
+        default: prod
+        description: "Environment"
+
+env:
+  TF_ROOT: infra
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.x
+
+      - name: Terraform Init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+        run: |
+          terraform -chdir=$TF_ROOT init -reconfigure \
+            -backend-config="endpoint=https://nyc3.digitaloceanspaces.com" \
+            -backend-config="bucket=fishing-map-${{ inputs.environment }}-terraform-state" \
+            -backend-config="key=terraform.tfstate" \
+            -backend-config="region=us-east-1"
+
+      - name: Create tfvars
+        run: |
+          cat > $TF_ROOT/terraform.tfvars << EOF
+          do_token            = "${{ secrets.DIGITALOCEAN_TOKEN }}"
+          spaces_access_key   = "${{ secrets.SPACES_ACCESS_KEY }}"
+          spaces_secret_key   = "${{ secrets.SPACES_SECRET_KEY }}"
+          project_name        = "fishing-map"
+          environment         = "${{ inputs.environment }}"
+          enable_managed_database = true
+          EOF
+
+      - name: Terraform Plan
+        if: inputs.action == 'plan'
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+        run: terraform -chdir=$TF_ROOT plan
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+        run: terraform -chdir=$TF_ROOT apply -auto-approve
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+        run: terraform -chdir=$TF_ROOT destroy -auto-approve
+
+      - name: Show Outputs
+        if: inputs.action == 'apply'
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_KEY }}
+        run: |
+          echo "=== Infrastructure Created ==="
+          echo "Cluster: $(terraform -chdir=$TF_ROOT output -raw cluster_name)"
+          echo "Region: $(terraform -chdir=$TF_ROOT output -raw cluster_region)"
+          echo "Registry: $(terraform -chdir=$TF_ROOT output -raw registry_endpoint)"
+          echo ""
+          echo "Configure kubectl:"
+          echo "  $(terraform -chdir=$TF_ROOT output -raw kubeconfig_command)"
+

@@ -1,6 +1,14 @@
 # DigitalOcean Configuration
 do_token = "your_digitalocean_api_token_here"
 
+# Spaces Access Keys (necessário para Terraform backend e Object Storage)
+spaces_access_key = "your_spaces_access_key_here"
+spaces_secret_key = "your_spaces_secret_key_here"
+
+# =============================================================================
+# Project Settings
+# =============================================================================
+
 # Project Settings
 project_name = "fishing-map"
 environment  = "dev"  # dev, staging, prod

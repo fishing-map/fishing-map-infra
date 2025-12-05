@@ -1,0 +1,78 @@
+name: Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        type: choice
+        options: [all, observability, redis, pgadmin, sonarqube]
+        default: all
+        description: "Component to deploy"
+
+env:
+  CLUSTER_NAME: fishing-map-prod-cluster
+  NAMESPACE: fishing-map
+  RELEASE_NAME: fishing-map-infra
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup DigitalOcean
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_TOKEN }}
+
+      - name: Configure kubectl
+        run: |
+          doctl kubernetes cluster kubeconfig save ${{ env.CLUSTER_NAME }}
+          kubectl get nodes
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy Helm Chart
+        run: |
+          COMPONENT="${{ inputs.component }}"
+          
+          # Build helm args based on component
+          HELM_ARGS="--namespace ${{ env.NAMESPACE }}"
+          
+          case "$COMPONENT" in
+            all)
+              HELM_ARGS="$HELM_ARGS --set redis.enabled=true"
+              HELM_ARGS="$HELM_ARGS --set pgadmin.enabled=true"
+              HELM_ARGS="$HELM_ARGS --set sonarqube.enabled=true"
+              HELM_ARGS="$HELM_ARGS --set observability.enabled=true"
+              ;;
+            redis)
+              HELM_ARGS="$HELM_ARGS --set redis.enabled=true"
+              ;;
+            pgadmin)
+              HELM_ARGS="$HELM_ARGS --set pgadmin.enabled=true"
+              ;;
+            sonarqube)
+              HELM_ARGS="$HELM_ARGS --set sonarqube.enabled=true"
+              ;;
+            observability)
+              HELM_ARGS="$HELM_ARGS --set observability.enabled=true"
+              ;;
+          esac
+          
+          echo "Deploying: $COMPONENT"
+          helm upgrade --install ${{ env.RELEASE_NAME }} ./helm $HELM_ARGS --wait --timeout 10m
+
+      - name: Show Status
+        if: always()
+        run: |
+          echo "=== Helm Release ==="
+          helm list -n ${{ env.NAMESPACE }}
+          echo ""
+          echo "=== Pods ==="
+          kubectl get pods -n ${{ env.NAMESPACE }}
+
