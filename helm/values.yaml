@@ -80,8 +80,8 @@ pgadmin:
     repository: dpage/pgadmin4
     tag: "latest"
     pullPolicy: IfNotPresent
-  adminEmail: "admin@fishingmap.com.br"
-  adminPassword: ""  # Set via --set pgadmin.adminPassword=xxx
+  adminEmail: "adm.fishingmap@gmail.com"
+  adminPassword: "Fishingmap@2025"
   database:
     host: ""
     port: "25060"
