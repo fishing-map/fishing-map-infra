@@ -49,8 +49,9 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
+# HPA desabilitado - está no projeto fishing-map-server
 hpa:
-  enabled: true
+  enabled: false
   minReplicas: 1
   maxReplicas: 2
   targetCPUUtilization: 70
