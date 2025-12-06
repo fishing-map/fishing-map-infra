@@ -5,8 +5,8 @@ on:
     inputs:
       component:
         type: choice
-        options: [all, observability, redis, pgadmin, sonarqube, none]
-        default: all
+        options: [none, all, redis, pgadmin, sonarqube, observability]
+        default: none
         description: "Component to deploy (none = only check status)"
 
 env:
@@ -36,35 +36,23 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
-      - name: Check existing resources
-        id: check
+      - name: Show Current Status
         run: |
-          echo "Checking existing resources..."
-          
-          # Check if release exists
-          if helm list -n ${{ env.NAMESPACE }} | grep -q "${{ env.RELEASE_NAME }}"; then
-            echo "release_exists=true" >> $GITHUB_OUTPUT
-            echo "Helm release exists"
-          else
-            echo "release_exists=false" >> $GITHUB_OUTPUT
-            echo "Helm release does not exist"
-          fi
-          
-          # Check existing ingresses
-          EXISTING_INGRESSES=$(kubectl get ingress -n ${{ env.NAMESPACE }} -o name 2>/dev/null || echo "")
-          echo "existing_ingresses=$EXISTING_INGRESSES" >> $GITHUB_OUTPUT
-          echo "Existing ingresses: $EXISTING_INGRESSES"
+          echo "=== Helm Releases ==="
+          helm list -n ${{ env.NAMESPACE }} || true
+          echo ""
+          echo "=== Pods ==="
+          kubectl get pods -n ${{ env.NAMESPACE }} || true
+          echo ""
+          echo "=== Ingresses ==="
+          kubectl get ingress -n ${{ env.NAMESPACE }} || true
 
       - name: Deploy Helm Chart
-        if: inputs.component != 'none'
+        if: ${{ inputs.component != 'none' }}
         run: |
           COMPONENT="${{ inputs.component }}"
           
-          # Build helm args based on component
-          HELM_ARGS="--namespace ${{ env.NAMESPACE }}"
-          
-          # Add skip-crds to avoid conflicts with existing resources
-          HELM_ARGS="$HELM_ARGS --skip-crds"
+          HELM_ARGS="--namespace ${{ env.NAMESPACE }} --skip-crds"
           
           case "$COMPONENT" in
             all)
@@ -91,15 +79,7 @@ jobs:
           echo "Deploying: $COMPONENT"
           helm upgrade --install ${{ env.RELEASE_NAME }} ./helm $HELM_ARGS --wait --timeout 10m
 
-      - name: Show Status
-        if: always()
-        run: |
-          echo "=== Helm Release ==="
-          helm list -n ${{ env.NAMESPACE }}
-          echo ""
-          echo "=== Pods ==="
-          kubectl get pods -n ${{ env.NAMESPACE }}
-          echo ""
-          echo "=== Ingresses ==="
-          kubectl get ingress -n ${{ env.NAMESPACE }}
+      - name: Skip Deploy Info
+        if: ${{ inputs.component == 'none' }}
+        run: echo "Status check only - no deployment requested"
 
