@@ -5,9 +5,9 @@ on:
     inputs:
       component:
         type: choice
-        options: [all, observability, redis, pgadmin, sonarqube]
+        options: [all, observability, redis, pgadmin, sonarqube, none]
         default: all
-        description: "Component to deploy"
+        description: "Component to deploy (none = only check status)"
 
 env:
   CLUSTER_NAME: fishing-map-prod-cluster
@@ -36,19 +36,43 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
+      - name: Check existing resources
+        id: check
+        run: |
+          echo "Checking existing resources..."
+          
+          # Check if release exists
+          if helm list -n ${{ env.NAMESPACE }} | grep -q "${{ env.RELEASE_NAME }}"; then
+            echo "release_exists=true" >> $GITHUB_OUTPUT
+            echo "Helm release exists"
+          else
+            echo "release_exists=false" >> $GITHUB_OUTPUT
+            echo "Helm release does not exist"
+          fi
+          
+          # Check existing ingresses
+          EXISTING_INGRESSES=$(kubectl get ingress -n ${{ env.NAMESPACE }} -o name 2>/dev/null || echo "")
+          echo "existing_ingresses=$EXISTING_INGRESSES" >> $GITHUB_OUTPUT
+          echo "Existing ingresses: $EXISTING_INGRESSES"
+
       - name: Deploy Helm Chart
+        if: inputs.component != 'none'
         run: |
           COMPONENT="${{ inputs.component }}"
           
           # Build helm args based on component
           HELM_ARGS="--namespace ${{ env.NAMESPACE }}"
           
+          # Add skip-crds to avoid conflicts with existing resources
+          HELM_ARGS="$HELM_ARGS --skip-crds"
+          
           case "$COMPONENT" in
             all)
               HELM_ARGS="$HELM_ARGS --set redis.enabled=true"
-              HELM_ARGS="$HELM_ARGS --set pgadmin.enabled=true"
-              HELM_ARGS="$HELM_ARGS --set sonarqube.enabled=true"
-              HELM_ARGS="$HELM_ARGS --set observability.enabled=true"
+              HELM_ARGS="$HELM_ARGS --set pgadmin.enabled=false"
+              HELM_ARGS="$HELM_ARGS --set sonarqube.enabled=false"
+              HELM_ARGS="$HELM_ARGS --set observability.enabled=false"
+              HELM_ARGS="$HELM_ARGS --set ingress.devtools.enabled=false"
               ;;
             redis)
               HELM_ARGS="$HELM_ARGS --set redis.enabled=true"
@@ -75,4 +99,7 @@ jobs:
           echo ""
           echo "=== Pods ==="
           kubectl get pods -n ${{ env.NAMESPACE }}
+          echo ""
+          echo "=== Ingresses ==="
+          kubectl get ingress -n ${{ env.NAMESPACE }}
 
